@@ -19,6 +19,7 @@ Run `/reload` after installing or updating the package.
 ### Session tools
 
 - `/pr [branch]` opens a pull or merge request in a browser.
+- `/plannotator-last` annotates the latest assistant response; `/plannotator-review [PR URL]` reviews current changes or a GitHub/GitLab review. The agent can invoke the same flows through `plannotator_last` and `plannotator_review`. Install the CLI first with `curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal`.
 - `/btw <question>` starts a side session; `/merge` sends its answer back.
 - `/focus feature <text>`, `/focus task <text>`, and `/focus clear` manage the session label. A configured model can update it automatically.
 - `/spend` summarizes session costs.
@@ -98,7 +99,7 @@ Use it in Pi or directly from a checkout:
 node --experimental-strip-types extensions/hygiene/cli.ts [--diff file|-] [--root dir] [paths...] [--json] [--check] [--fail-on error|warning|info] [--no-clef]
 ```
 
-With no paths or diff, the CLI checks uncommitted changes and untracked files. `--check` exits with status 1 when a finding meets the `--fail-on` threshold (default: `warning`). Add new rule traits under `extensions/hygiene/traits/`, register them in `extensions/hygiene/traits.ts`, and increment a rule's `version` when changing it to invalidate cached judgments.
+With no arguments, `/hygiene` and `hygiene_lint` check uncommitted changes and untracked files. The standalone CLI requires paths or `--diff`. `--check` exits with status 1 when a finding meets the `--fail-on` threshold (default: `warning`). Add new rule traits under `extensions/hygiene/traits/`, register them in `extensions/hygiene/traits.ts`, and increment a rule's `version` when changing it to invalidate cached judgments.
 
 ## Model failover and subagent safety
 
