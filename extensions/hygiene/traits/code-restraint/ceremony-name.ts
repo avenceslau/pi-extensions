@@ -4,7 +4,8 @@ export default {
   name: "code-restraint/ceremony-name",
   version: 2,
   subject: "New type, class and function names.",
-  requirement: "Avoid ceremony suffixes such as Factory, Manager, Helper, Util, Wrapper and Impl that describe a pattern instead of what the thing does.",
+  requirement:
+    "Avoid ceremony suffixes such as Factory, Manager, Helper, Util, Wrapper and Impl that describe a pattern instead of what the thing does.",
   purpose: "The suffix hides the responsibility.",
   candidate: "identifier",
   check: "local",

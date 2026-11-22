@@ -1,4 +1,9 @@
-import { TEST_FILE, type Analysis, type FunctionInfo, type Identifier } from "./analysis.ts";
+import {
+  TEST_FILE,
+  type Analysis,
+  type FunctionInfo,
+  type Identifier,
+} from "./analysis.ts";
 import { addedRuns, countAdded, type ChangedFile } from "./diff.ts";
 import { SHORT_NAME_MAX_CHARS, usefulSuggestion } from "./names.ts";
 import type { Trait } from "./traits.ts";
@@ -38,15 +43,27 @@ export const BUILT_RULES = new Set([
   "refactor/tangled-branching",
   "refactor/mixed-responsibilities",
 ]);
+
 // Rules about a whole function: a flagged span of added lines is reported as is instead of being split.
-const FUNCTION_RULES = new Set(["refactor/tangled-branching", "refactor/mixed-responsibilities"]);
+const FUNCTION_RULES = new Set([
+  "refactor/tangled-branching",
+  "refactor/mixed-responsibilities",
+]);
+
 // A one-use helper needs a call-site count.
 const NEEDS_PARSER = new Set(["code-restraint/one-use-helper"]);
-const ENTRY_POINT = /^(?:constructor|default|main|fetch|alarm|scheduled|queue|webSocketMessage|webSocketClose|render)$/;
+const ENTRY_POINT =
+  /^(?:constructor|default|main|fetch|alarm|scheduled|queue|webSocketMessage|webSocketClose|render)$/;
 const SPAN_GAP = 3;
 const MIN_SPLIT_LINES = 5;
 const MAX_NAME_USES = 3;
-const NAME_RULE_KINDS = new Set(["function", "variable", "parameter", "type", "const"]);
+const NAME_RULE_KINDS = new Set([
+  "function",
+  "variable",
+  "parameter",
+  "type",
+  "const",
+]);
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -60,23 +77,34 @@ async function usesElsewhere(
   if (name.length < 3) {
     return fileUses;
   }
+
   const total = await countWord(name);
+
   // The declaration itself is one of the occurrences.
   return total === undefined ? fileUses : total - 1;
 }
 
 // Added lines other than the declaration that use the name, so the excerpt shows what the name stands for.
-function nameUses(identifier: Identifier, lines: string[], file: ChangedFile): number[] {
-  const pattern = new RegExp(`(?<![\\w$])${escapeRegExp(identifier.name)}(?![\\w$])`);
+function nameUses(
+  identifier: Identifier,
+  lines: string[],
+  file: ChangedFile,
+): number[] {
+  const pattern = new RegExp(
+    `(?<![\\w$])${escapeRegExp(identifier.name)}(?![\\w$])`,
+  );
   const uses: number[] = [];
+
   for (const line of [...file.added].sort((a, b) => a - b)) {
     if (uses.length >= MAX_NAME_USES) {
       break;
     }
+
     if (line !== identifier.line && pattern.test(lines[line - 1] ?? "")) {
       uses.push(line);
     }
   }
+
   return uses;
 }
 
@@ -88,10 +116,14 @@ function nameCandidates(
   wanted: (rule: string) => boolean,
 ): Candidate[] {
   const { name } = identifier;
+
   if (name.length <= SHORT_NAME_MAX_CHARS || name.startsWith("_")) {
     return [];
   }
-  const coined = wanted("code-restraint/coined-name") && !identifier.functionLocal;
+
+  const coined =
+    wanted("code-restraint/coined-name") && !identifier.functionLocal;
+
   const undescriptive =
     wanted("code-restraint/undescriptive-name") &&
     NAME_RULE_KINDS.has(identifier.kind) &&
@@ -100,6 +132,7 @@ function nameCandidates(
     !identifier.contextual &&
     !identifier.nameFromProperty &&
     !identifier.holdsAnyValue;
+
   const base = {
     path,
     name,
@@ -111,9 +144,12 @@ function nameCandidates(
     extraLines: nameUses(identifier, lines, file),
     suggestion: usefulSuggestion(identifier),
   };
+
   return [
     ...(coined ? [{ ...base, rule: "code-restraint/coined-name" }] : []),
-    ...(undescriptive ? [{ ...base, rule: "code-restraint/undescriptive-name" }] : []),
+    ...(undescriptive
+      ? [{ ...base, rule: "code-restraint/undescriptive-name" }]
+      : []),
   ];
 }
 
@@ -129,7 +165,10 @@ async function functionCandidates(
   const length = fn.endLine - fn.line + 1;
   const addedLines = countAdded(file.added, fn.line, fn.endLine);
   const isNew = file.added.has(fn.line);
-  const fileUses = (analysis.calls.get(name) ?? []).filter((line) => line < fn.line || line > fn.endLine);
+  const fileUses = (analysis.calls.get(name) ?? []).filter(
+    (line) => line < fn.line || line > fn.endLine,
+  );
+
   const base = {
     path,
     name,
@@ -137,10 +176,18 @@ async function functionCandidates(
     endLine: fn.endLine,
     describe: `the function \`${name}\` on lines ${fn.line}-${fn.endLine}`,
   };
+
   const candidates: Candidate[] = [];
 
-  if (isNew && !ENTRY_POINT.test(name) && wanted("code-restraint/one-use-helper")) {
-    const uses = fn.exported ? await usesElsewhere(name, fileUses.length, countWord) : fileUses.length;
+  if (
+    isNew &&
+    !ENTRY_POINT.test(name) &&
+    wanted("code-restraint/one-use-helper")
+  ) {
+    const uses = fn.exported
+      ? await usesElsewhere(name, fileUses.length, countWord)
+      : fileUses.length;
+
     if (uses === 1) {
       candidates.push({
         ...base,
@@ -151,8 +198,17 @@ async function functionCandidates(
       });
     }
   }
-  if (isNew && fn.single && length <= 6 && wanted("code-restraint/trivial-wrapper")) {
-    const callee = fn.single.kind === "call" ? `call to \`${fn.single.name ?? "another function"}\`` : "expression";
+
+  if (
+    isNew &&
+    fn.single &&
+    length <= 6 &&
+    wanted("code-restraint/trivial-wrapper")
+  ) {
+    const callee =
+      fn.single.kind === "call"
+        ? `call to \`${fn.single.name ?? "another function"}\``
+        : "expression";
     candidates.push({
       ...base,
       rule: "code-restraint/trivial-wrapper",
@@ -160,7 +216,12 @@ async function functionCandidates(
       facts: `Its body is a single ${callee}.`,
     });
   }
-  if (fn.branches >= 6 && addedLines >= 5 && wanted("refactor/tangled-branching")) {
+
+  if (
+    fn.branches >= 6 &&
+    addedLines >= 5 &&
+    wanted("refactor/tangled-branching")
+  ) {
     candidates.push({
       ...base,
       rule: "refactor/tangled-branching",
@@ -168,7 +229,12 @@ async function functionCandidates(
       facts: `It has ${fn.branches} branches and nests ${fn.maxDepth} levels deep; ${addedLines} of its lines were added by this change.`,
     });
   }
-  if (length >= 30 && addedLines >= 10 && wanted("refactor/mixed-responsibilities")) {
+
+  if (
+    length >= 30 &&
+    addedLines >= 10 &&
+    wanted("refactor/mixed-responsibilities")
+  ) {
     candidates.push({
       ...base,
       rule: "refactor/mixed-responsibilities",
@@ -176,6 +242,7 @@ async function functionCandidates(
       facts: `It is ${length} lines long; ${addedLines} of its lines were added by this change.`,
     });
   }
+
   return candidates;
 }
 
@@ -193,20 +260,31 @@ export async function parsedCandidates(
 
   const lines = source.split("\n");
   const seen = new Set<string>();
+
   for (const identifier of analysis.identifiers) {
     const key = `${identifier.name}:${identifier.line}`;
+
     if (seen.has(key) || !added.has(identifier.line)) {
       continue;
     }
+
     seen.add(key);
     candidates.push(...nameCandidates(identifier, path, lines, file, wanted));
   }
 
   if (wanted("code-restraint/speculative-knob")) {
-    for (const knob of analysis.knobs.filter((entry) => added.has(entry.line))) {
-      const pattern = new RegExp(`\\b${escapeRegExp(knob.name.replace(/[^\w$]/g, ""))}\\b`, "g");
+    for (const knob of analysis.knobs.filter((entry) =>
+      added.has(entry.line),
+    )) {
+      const pattern = new RegExp(
+        `\\b${escapeRegExp(knob.name.replace(/[^\w$]/g, ""))}\\b`,
+        "g",
+      );
       const inFile = (source.match(pattern) ?? []).length - 1;
-      const inRepository = Math.max(inFile, await usesElsewhere(knob.name, inFile, countWord));
+      const inRepository = Math.max(
+        inFile,
+        await usesElsewhere(knob.name, inFile, countWord),
+      );
       candidates.push({
         rule: "code-restraint/speculative-knob",
         path,
@@ -224,7 +302,17 @@ export async function parsedCandidates(
     if (!fn.name) {
       continue;
     }
-    candidates.push(...(await functionCandidates(fn, path, file, analysis, wanted, countWord)));
+
+    candidates.push(
+      ...(await functionCandidates(
+        fn,
+        path,
+        file,
+        analysis,
+        wanted,
+        countWord,
+      )),
+    );
   }
 
   if (wanted("code-restraint/test-either-outcome")) {
@@ -232,6 +320,7 @@ export async function parsedCandidates(
       if (countAdded(added, branch.line, branch.endLine) === 0) {
         continue;
       }
+
       candidates.push({
         rule: "code-restraint/test-either-outcome",
         path,
@@ -242,24 +331,34 @@ export async function parsedCandidates(
       });
     }
   }
+
   return candidates;
 }
 
 // Added lines close together form one span, so scattered one-line edits do not each cost a question.
 function addedSpans(file: ChangedFile): { line: number; endLine: number }[] {
   const spans: { line: number; endLine: number }[] = [];
+
   for (const run of addedRuns(file)) {
     const last = spans.at(-1);
+
     if (last && run.line - last.endLine <= SPAN_GAP) {
       last.endLine = run.endLine;
       continue;
     }
+
     spans.push({ ...run });
   }
+
   return spans;
 }
 
-export function spanCandidate(rule: string, path: string, line: number, endLine: number): Candidate {
+export function spanCandidate(
+  rule: string,
+  path: string,
+  line: number,
+  endLine: number,
+): Candidate {
   return {
     rule,
     path,
@@ -272,37 +371,57 @@ export function spanCandidate(rule: string, path: string, line: number, endLine:
 }
 
 // For clef rules without parser-built candidates in this file.
-export function spanCandidates(path: string, file: ChangedFile, rules: Trait[]): Candidate[] {
+export function spanCandidates(
+  path: string,
+  file: ChangedFile,
+  rules: Trait[],
+): Candidate[] {
   const applicable = rules.filter((trait) => {
     if (NEEDS_PARSER.has(trait.name)) {
       return false;
     }
-    return trait.name !== "code-restraint/test-either-outcome" || TEST_FILE.test(path);
+
+    return (
+      trait.name !== "code-restraint/test-either-outcome" ||
+      TEST_FILE.test(path)
+    );
   });
+
   return addedSpans(file).flatMap((span) => {
-    return applicable.map((trait) => spanCandidate(trait.name, path, span.line, span.endLine));
+    return applicable.map((trait) =>
+      spanCandidate(trait.name, path, span.line, span.endLine),
+    );
   });
 }
 
 // Splits at the blank or statement-ending line nearest the middle, so halves tend to hold whole statements.
 export function splitSpan(candidate: Candidate, lines: string[]): Candidate[] {
   const { line, endLine } = candidate;
+
   if (!candidate.bisect || endLine - line + 1 < MIN_SPLIT_LINES) {
     return [];
   }
 
   const middle = Math.floor((line + endLine) / 2);
   let cut = middle;
+
   for (let distance = 0; distance <= (endLine - line) / 2; distance += 1) {
     const found = [middle - distance, middle + distance].find((at) => {
       const text = lines[at - 1]?.trimEnd() ?? "";
-      return at >= line && at < endLine && (text.trim() === "" || /[;}]$|\}\);$/.test(text));
+
+      return (
+        at >= line &&
+        at < endLine &&
+        (text.trim() === "" || /[;}]$|\}\);$/.test(text))
+      );
     });
+
     if (found !== undefined) {
       cut = found;
       break;
     }
   }
+
   return [
     spanCandidate(candidate.rule, candidate.path, line, cut),
     spanCandidate(candidate.rule, candidate.path, cut + 1, endLine),

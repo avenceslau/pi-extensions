@@ -49,31 +49,31 @@ Never rely on flag names from memory. The skill references below document what w
 
 ### MR lifecycle
 
-| Command | Purpose |
-|---|---|
+| Command                                                                                      | Purpose                                    |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | `glab mr create --squash-before-merge --remove-source-branch -t "<title>" -d "<short desc>"` | Create MR (required flags in bold context) |
-| `glab mr view <id\|branch>` | Title, body, metadata |
-| `glab mr view <id\|branch> --comments` | Include threads/notes |
-| `glab mr view <id\|branch> -F json` | JSON for scripting |
-| `glab mr diff <id\|branch>` | Show diff |
-| `glab mr checkout <id\|branch\|url>` | Pull MR locally |
-| `glab mr list --assignee=@me` | MRs assigned to you |
-| `glab mr list --reviewer=@me --not-draft` | MRs awaiting your review |
-| `glab mr update <id\|branch> ...` | Edit title/description/labels/draft/squash |
-| `glab mr rebase <id\|branch>` | Rebase source onto target server-side |
-| `glab mr close <id\|branch>` / `reopen` | State transitions |
-| ~~`glab mr merge`~~ | **BLOCKED — human-only; see Hard Rule #1** |
+| `glab mr view <id\|branch>`                                                                  | Title, body, metadata                      |
+| `glab mr view <id\|branch> --comments`                                                       | Include threads/notes                      |
+| `glab mr view <id\|branch> -F json`                                                          | JSON for scripting                         |
+| `glab mr diff <id\|branch>`                                                                  | Show diff                                  |
+| `glab mr checkout <id\|branch\|url>`                                                         | Pull MR locally                            |
+| `glab mr list --assignee=@me`                                                                | MRs assigned to you                        |
+| `glab mr list --reviewer=@me --not-draft`                                                    | MRs awaiting your review                   |
+| `glab mr update <id\|branch> ...`                                                            | Edit title/description/labels/draft/squash |
+| `glab mr rebase <id\|branch>`                                                                | Rebase source onto target server-side      |
+| `glab mr close <id\|branch>` / `reopen`                                                      | State transitions                          |
+| ~~`glab mr merge`~~                                                                          | **BLOCKED — human-only; see Hard Rule #1** |
 
 ### Review
 
-| Command | Purpose |
-|---|---|
-| `glab mr approve <id\|branch>` | Approve |
-| `glab mr revoke <id\|branch>` | Revoke your approval |
-| `glab mr note <id\|branch> -m "<comment>"` | Add a comment / note |
-| `glab mr note <id\|branch> -m "..." --unique` | Only post if identical note doesn't exist |
-| `glab mr todo <id\|branch>` | Add a to-do reminder for yourself |
-| `glab mr subscribe <id\|branch>` / `unsubscribe` | Notification control |
+| Command                                          | Purpose                                   |
+| ------------------------------------------------ | ----------------------------------------- |
+| `glab mr approve <id\|branch>`                   | Approve                                   |
+| `glab mr revoke <id\|branch>`                    | Revoke your approval                      |
+| `glab mr note <id\|branch> -m "<comment>"`       | Add a comment / note                      |
+| `glab mr note <id\|branch> -m "..." --unique`    | Only post if identical note doesn't exist |
+| `glab mr todo <id\|branch>`                      | Add a to-do reminder for yourself         |
+| `glab mr subscribe <id\|branch>` / `unsubscribe` | Notification control                      |
 
 ## Common flows
 
@@ -130,21 +130,21 @@ Then stop.
 
 ## Anti-patterns
 
-| Anti-pattern | Why it matters |
-|---|---|
-| Running `glab mr merge` from the agent | Hard-blocked by policy and OpenCode permission; merging is human-only |
-| `glab api ...merge_requests/.../merge` as a back door | Same — blocked at permission layer; violates policy |
-| Setting a `glab alias` that wraps merge | Circumvention attempt; policy is on intent, not syntax |
-| `bash -c 'glab mr merge ...'` / `xargs glab` / custom wrappers | Same — do not attempt |
-| `glab mr create` without `--squash-before-merge` | Violates repo policy (Hard Rule #2) |
-| `--fill` on a multi-commit branch | Concatenates every commit body into the description → long, noisy, violates Hard Rule #3 |
-| Description >~10 lines, commit logs/diffs pasted in, or a `## What` that paraphrases the title/diff | Reviewers skim — only decisions and system impact justify their time |
-| `--rebase` on merge as an alternative to `--squash` | Bypasses the squash policy even if merging were allowed |
-| Hand-setting `-R` / `GITLAB_HOST` in-repo | Redundant; host comes from git remote |
-| Hardcoding MR IDs where a branch name works | Most `glab mr` commands accept `<branch>` — more readable |
-| Omitting `--unique` on idempotent review notes | Re-running a script spams the thread |
-| Creating a default-branch MR without `--reviewer` from `resolve_codeowners.py` | Violates Hard Rule #4 — codeowners aren't auto-assigned as reviewers server-side, so the MR ships with no one tagged |
-| `glab mr update <id> --reviewer user1,user2` (bare, no `+`) | Replaces the entire reviewer list — wipes any codeowners or extra reviewers someone else added. Use `+user1,+user2` to add. |
+| Anti-pattern                                                                                        | Why it matters                                                                                                              |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Running `glab mr merge` from the agent                                                              | Hard-blocked by policy and OpenCode permission; merging is human-only                                                       |
+| `glab api ...merge_requests/.../merge` as a back door                                               | Same — blocked at permission layer; violates policy                                                                         |
+| Setting a `glab alias` that wraps merge                                                             | Circumvention attempt; policy is on intent, not syntax                                                                      |
+| `bash -c 'glab mr merge ...'` / `xargs glab` / custom wrappers                                      | Same — do not attempt                                                                                                       |
+| `glab mr create` without `--squash-before-merge`                                                    | Violates repo policy (Hard Rule #2)                                                                                         |
+| `--fill` on a multi-commit branch                                                                   | Concatenates every commit body into the description → long, noisy, violates Hard Rule #3                                    |
+| Description >~10 lines, commit logs/diffs pasted in, or a `## What` that paraphrases the title/diff | Reviewers skim — only decisions and system impact justify their time                                                        |
+| `--rebase` on merge as an alternative to `--squash`                                                 | Bypasses the squash policy even if merging were allowed                                                                     |
+| Hand-setting `-R` / `GITLAB_HOST` in-repo                                                           | Redundant; host comes from git remote                                                                                       |
+| Hardcoding MR IDs where a branch name works                                                         | Most `glab mr` commands accept `<branch>` — more readable                                                                   |
+| Omitting `--unique` on idempotent review notes                                                      | Re-running a script spams the thread                                                                                        |
+| Creating a default-branch MR without `--reviewer` from `resolve_codeowners.py`                      | Violates Hard Rule #4 — codeowners aren't auto-assigned as reviewers server-side, so the MR ships with no one tagged        |
+| `glab mr update <id> --reviewer user1,user2` (bare, no `+`)                                         | Replaces the entire reviewer list — wipes any codeowners or extra reviewers someone else added. Use `+user1,+user2` to add. |
 
 ## Limitations of the block
 

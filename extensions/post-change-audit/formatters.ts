@@ -16,7 +16,12 @@ const JS_FORMATTERS = [
     name: "biome",
     dependency: "@biomejs/biome",
     configs: ["biome.json", "biome.jsonc"],
-    args: ["format", "--write", "--files-ignore-unknown=true", "--no-errors-on-unmatched"],
+    args: [
+      "format",
+      "--write",
+      "--files-ignore-unknown=true",
+      "--no-errors-on-unmatched",
+    ],
   },
   {
     name: "dprint",
@@ -55,36 +60,55 @@ interface FormatterRun {
   args: string[];
 }
 
-async function jsFormatter(root: string): Promise<(typeof JS_FORMATTERS)[number] | undefined> {
-  const manifest: unknown = await readFile(join(root, "package.json"), "utf8").then(JSON.parse, () => undefined);
-  const { dependencies = {}, devDependencies = {}, scripts = {} } = Value.Check(PackageManifestSchema, manifest)
-    ? manifest
-    : {};
+async function jsFormatter(
+  root: string,
+): Promise<(typeof JS_FORMATTERS)[number] | undefined> {
+  const manifest: unknown = await readFile(
+    join(root, "package.json"),
+    "utf8",
+  ).then(JSON.parse, () => undefined);
+
+  const {
+    dependencies = {},
+    devDependencies = {},
+    scripts = {},
+  } = Value.Check(PackageManifestSchema, manifest) ? manifest : {};
 
   return JS_FORMATTERS.find((formatter) => {
     return (
       formatter.configs.some((config) => existsSync(join(root, config))) ||
       formatter.dependency in dependencies ||
       formatter.dependency in devDependencies ||
-      Object.values(scripts).some((script) => new RegExp(`\\b${formatter.name}\\b`).test(script))
+      Object.values(scripts).some((script) =>
+        new RegExp(`\\b${formatter.name}\\b`).test(script),
+      )
     );
   });
 }
 
 // rustfmt defaults to the 2015 edition when run on files outside cargo.
 async function rustEdition(root: string): Promise<string> {
-  const manifest = await readFile(join(root, "Cargo.toml"), "utf8").catch(() => "");
+  const manifest = await readFile(join(root, "Cargo.toml"), "utf8").catch(
+    () => "",
+  );
+
   return /^edition\s*=\s*"(\d{4})"/m.exec(manifest)?.[1] ?? "2021";
 }
 
-export async function formatterRuns(root: string, paths: string[]): Promise<FormatterRun[]> {
+export async function formatterRuns(
+  root: string,
+  paths: string[],
+): Promise<FormatterRun[]> {
   const files = paths.filter((path) => existsSync(join(root, path)));
   const rust = files.filter((file) => file.endsWith(".rs"));
   const go = files.filter((file) => file.endsWith(".go"));
-  const rest = files.filter((file) => !rust.includes(file) && !go.includes(file));
+  const rest = files.filter(
+    (file) => !rust.includes(file) && !go.includes(file),
+  );
   const runs: FormatterRun[] = [];
 
   const formatter = rest.length > 0 ? await jsFormatter(root) : undefined;
+
   if (formatter) {
     const local = join(root, "node_modules", ".bin", formatter.name);
     runs.push({
@@ -93,6 +117,7 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
       args: [...formatter.args, ...rest],
     });
   }
+
   if (rust.length > 0) {
     runs.push({
       name: "rustfmt",
@@ -100,6 +125,7 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
       args: ["--edition", await rustEdition(root), ...rust],
     });
   }
+
   if (go.length > 0) {
     runs.push({
       name: "gofmt",
@@ -107,5 +133,6 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
       args: ["-w", ...go],
     });
   }
+
   return runs;
 }

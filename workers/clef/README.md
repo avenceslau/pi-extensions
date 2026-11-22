@@ -45,11 +45,11 @@ is published on GitHub's `main` branch.
 4. In the Worker's **Settings → Variables and Secrets**, add these **runtime text variables**, then deploy
    the configuration change:
 
-   | Variable | Value |
-   | --- | --- |
-   | `ACCESS_TEAM_DOMAIN` | `https://<team>.cloudflareaccess.com` |
-   | `ACCESS_AUDIENCE` | The Access application's AUD tag |
-   | `ALLOWED_EMAIL` | The same exact email as the Allow policy |
+   | Variable             | Value                                    |
+   | -------------------- | ---------------------------------------- |
+   | `ACCESS_TEAM_DOMAIN` | `https://<team>.cloudflareaccess.com`    |
+   | `ACCESS_AUDIENCE`    | The Access application's AUD tag         |
+   | `ALLOWED_EMAIL`      | The same exact email as the Allow policy |
 
    They are identifiers, not credentials. `keep_vars: true` preserves these dashboard-managed values on later
    CLI deploys. Missing values always deny requests. The Worker validates the JWT signature, issuer, audience,
@@ -119,6 +119,8 @@ npm run check
 npm run deploy -- --dry-run
 ```
 
+`npm run check` runs the Worker tests and Worker-specific `@durability/lint` rules. From the repository root,
+`npm run check` also applies Oxfmt, TSRS and vendored anti-slop rules to every extension and Worker TypeScript file.
 Tests sign real JWTs and use a local mock JWKS response and AI binding. They cover expired/wrongly signed tokens,
 wrong audiences, unauthorized emails, long-lived and non-user tokens, missing configuration, route/method/input
 limits, fixed model selection, and sanitized inference failures. `wrangler dev` is not an anonymous development

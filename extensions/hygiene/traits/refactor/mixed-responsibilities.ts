@@ -4,7 +4,8 @@ export default {
   name: "refactor/mixed-responsibilities",
   version: 1,
   subject: "A long function, shown in full.",
-  requirement: "A function should own one recognizable responsibility. Do not mix unrelated stages such as parsing, decisions, I/O, persistence and presentation in one body without visible phases; separate deciding what should happen from performing the effects.",
+  requirement:
+    "A function should own one recognizable responsibility. Do not mix unrelated stages such as parsing, decisions, I/O, persistence and presentation in one body without visible phases; separate deciding what should happen from performing the effects.",
   purpose: "Mixed responsibilities make each change touch unrelated logic.",
   candidate: "function-long",
   check: "clef",

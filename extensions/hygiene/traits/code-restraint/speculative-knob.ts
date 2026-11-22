@@ -3,8 +3,10 @@ import type { Trait } from "../../traits.ts";
 export default {
   name: "code-restraint/speculative-knob",
   version: 1,
-  subject: "A newly added option, optional parameter, default parameter, config key, hook or generic type parameter, shown with the code that declares and uses it.",
-  requirement: "Do not introduce config knobs, options, hooks, plugins or generics for hypothetical future needs. An option is justified only when a current caller passes a value other than the default or a current requirement needs it.",
+  subject:
+    "A newly added option, optional parameter, default parameter, config key, hook or generic type parameter, shown with the code that declares and uses it.",
+  requirement:
+    "Do not introduce config knobs, options, hooks, plugins or generics for hypothetical future needs. An option is justified only when a current caller passes a value other than the default or a current requirement needs it.",
   purpose: "Every knob doubles the states to test and reason about.",
   candidate: "knob",
   check: "clef",

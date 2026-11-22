@@ -2,14 +2,14 @@
 
 Choose a pattern from the code's symptom. Do not apply patterns speculatively.
 
-| Symptom | First move | Stop when |
-|---|---|---|
-| Deep nesting | Invert conditions and add guards | The primary path is linear |
-| Repeated discriminator | Split variants at the boundary | Each variant is straight-line |
-| Dense expression | Name a local value | Intent is obvious in place |
-| Mixed decisions and effects | Compute, then perform | Side effects are explicit |
-| Optional-field or flag combinations | Model explicit states | Invalid combinations disappear |
-| Mixed processing stages | Reorder and add whitespace | The stages are visually clear |
+| Symptom                             | First move                       | Stop when                      |
+| ----------------------------------- | -------------------------------- | ------------------------------ |
+| Deep nesting                        | Invert conditions and add guards | The primary path is linear     |
+| Repeated discriminator              | Split variants at the boundary   | Each variant is straight-line  |
+| Dense expression                    | Name a local value               | Intent is obvious in place     |
+| Mixed decisions and effects         | Compute, then perform            | Side effects are explicit      |
+| Optional-field or flag combinations | Model explicit states            | Invalid combinations disappear |
+| Mixed processing stages             | Reorder and add whitespace       | The stages are visually clear  |
 
 ## Flatten control flow
 

@@ -6,19 +6,19 @@ Full reference for merge request commands. Always run `glab <cmd> --help` to con
 
 ### Required flags (per skill policy)
 
-| Flag | Why |
-|---|---|
-| `--squash-before-merge` | Hard Rule #2 — repo policy is squash-on-merge |
+| Flag                                    | Why                                                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--squash-before-merge`                 | Hard Rule #2 — repo policy is squash-on-merge                                                        |
 | `--reviewer "$(resolve_codeowners.py)"` | Hard Rule #4 — when targeting the default branch. See [Codeowner resolution](#codeowner-resolution). |
 
 ### Recommended defaults
 
-| Flag | Why |
-|---|---|
-| `--remove-source-branch` | Keep branches clean after merge |
-| `-t` / `--title "<imperative, ≤72 chars>"` | Explicit title — avoid editor prompt |
-| `-d` / `--description "<short What/Why>"` | Explicit, short description — avoid `--fill` noise |
-| `--yes` | Skip submission confirmation |
+| Flag                                       | Why                                                |
+| ------------------------------------------ | -------------------------------------------------- |
+| `--remove-source-branch`                   | Keep branches clean after merge                    |
+| `-t` / `--title "<imperative, ≤72 chars>"` | Explicit title — avoid editor prompt               |
+| `-d` / `--description "<short What/Why>"`  | Explicit, short description — avoid `--fill` noise |
+| `--yes`                                    | Skip submission confirmation                       |
 
 ### Codeowner resolution
 
@@ -33,6 +33,7 @@ echo "$REVIEWERS"
 ```
 
 The helper:
+
 1. Finds `CODEOWNERS`, `.gitlab/CODEOWNERS`, or `docs/CODEOWNERS` in the repo
 2. Computes changed files via `git diff <target>...HEAD` (default target: `origin/HEAD`)
 3. Matches each file against CODEOWNERS rules using last-match-wins semantics
@@ -95,24 +96,24 @@ Adds Redis dependency on the auth path. Shared-NAT users may see 429s under sust
 
 ### Optional flags
 
-| Flag | Purpose |
-|---|---|
-| `--draft` (or `--wip`) | Mark as draft until ready for review |
-| `-a` / `--assignee username[,username...]` | Assign users (use `@me` for yourself) |
-| `--reviewer username[,username...]` | Request reviewers |
-| `-l` / `--label name[,name...]` | Apply labels |
-| `-m` / `--milestone <id-or-title>` | Assign milestone |
-| `-b` / `--target-branch <branch>` | Target other than default branch |
-| `-s` / `--source-branch <branch>` | Source other than current branch |
-| `-i` / `--related-issue <id>` | Link to issue; uses issue title if `-t` omitted |
-| `--copy-issue-labels` | With `--related-issue`, copy labels from issue |
-| `--allow-collaboration` | Allow commits from other members |
-| `--create-source-branch` | Create the source branch if missing |
-| `--push` | Push committed changes first (auto-set by `--fill`) |
-| `--no-editor` | Don't open editor; use prompts |
-| `--signoff` | Append DCO signoff to description |
-| `-H` / `--head <owner/repo>` | Fork head repository |
-| `-w` / `--web` | Continue creation in a browser |
+| Flag                                       | Purpose                                             |
+| ------------------------------------------ | --------------------------------------------------- |
+| `--draft` (or `--wip`)                     | Mark as draft until ready for review                |
+| `-a` / `--assignee username[,username...]` | Assign users (use `@me` for yourself)               |
+| `--reviewer username[,username...]`        | Request reviewers                                   |
+| `-l` / `--label name[,name...]`            | Apply labels                                        |
+| `-m` / `--milestone <id-or-title>`         | Assign milestone                                    |
+| `-b` / `--target-branch <branch>`          | Target other than default branch                    |
+| `-s` / `--source-branch <branch>`          | Source other than current branch                    |
+| `-i` / `--related-issue <id>`              | Link to issue; uses issue title if `-t` omitted     |
+| `--copy-issue-labels`                      | With `--related-issue`, copy labels from issue      |
+| `--allow-collaboration`                    | Allow commits from other members                    |
+| `--create-source-branch`                   | Create the source branch if missing                 |
+| `--push`                                   | Push committed changes first (auto-set by `--fill`) |
+| `--no-editor`                              | Don't open editor; use prompts                      |
+| `--signoff`                                | Append DCO signoff to description                   |
+| `-H` / `--head <owner/repo>`               | Fork head repository                                |
+| `-w` / `--web`                             | Continue creation in a browser                      |
 
 ### `--fill` — when acceptable
 
@@ -181,6 +182,7 @@ glab mr list -F json                         # scripting
 ```
 
 Sort/order:
+
 ```bash
 glab mr list --order updated_at --sort desc
 ```

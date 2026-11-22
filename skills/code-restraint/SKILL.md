@@ -49,18 +49,18 @@ compatibility: opencode
 
 ```js
 // Bad
-if (condition) doThing()
-if (condition) return
-for (const x of xs) process(x)
-while (running) tick()
+if (condition) doThing();
+if (condition) return;
+for (const x of xs) process(x);
+while (running) tick();
 
 // Good
 if (condition) {
-  doThing()
+  doThing();
 }
 
 for (const x of xs) {
-  process(x)
+  process(x);
 }
 ```
 

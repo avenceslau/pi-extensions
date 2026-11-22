@@ -17,10 +17,14 @@ export async function selectReviews(
 ): Promise<Set<string> | undefined> {
   if (ctx.mode !== "tui") {
     ctx.ui.notify("Shepherd review selection requires TUI mode", "error");
+
     return undefined;
   }
 
-  const working = new Set([...selected].filter((key) => reviews.some((review) => review.key === key)));
+  const working = new Set(
+    [...selected].filter((key) => reviews.some((review) => review.key === key)),
+  );
+
   return ctx.ui.custom<Set<string>>((tui, theme, _keybindings, done) => {
     const items: SettingItem[] = reviews.map((review) => ({
       id: review.key,
@@ -31,7 +35,11 @@ export async function selectReviews(
 
     const container = new Container();
     container.addChild(
-      new Text(theme.fg("accent", theme.bold("Select reviews for Shepherd")), 1, 1),
+      new Text(
+        theme.fg("accent", theme.bold("Select reviews for Shepherd")),
+        1,
+        1,
+      ),
     );
 
     const settings = new SettingsList(
@@ -48,10 +56,14 @@ export async function selectReviews(
       () => done(new Set(working)),
       { enableSearch: true },
     );
+
     container.addChild(settings);
     container.addChild(
       new Text(
-        theme.fg("dim", "Enter toggles · type to search · Esc accepts selection"),
+        theme.fg(
+          "dim",
+          "Enter toggles · type to search · Esc accepts selection",
+        ),
         1,
         0,
       ),
@@ -75,8 +87,10 @@ export async function chooseReview(
 ): Promise<Review | undefined> {
   if (reviews.length === 0) {
     ctx.ui.notify("Shepherd has no selected reviews", "warning");
+
     return undefined;
   }
+
   if (reviews.length === 1) {
     return reviews[0];
   }
@@ -84,5 +98,6 @@ export async function chooseReview(
   const labels = reviews.map((review) => `${review.key} · ${review.title}`);
   const selected = await ctx.ui.select(title, labels);
   const index = selected ? labels.indexOf(selected) : -1;
+
   return index >= 0 ? reviews[index] : undefined;
 }

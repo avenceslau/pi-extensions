@@ -91,7 +91,8 @@ export interface Analysis {
   calls: Map<string, number[]>;
 }
 
-export const TEST_FILE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)tests?\/|_test\.(?:go|py|rs)$)/;
+export const TEST_FILE =
+  /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)tests?\/|_test\.(?:go|py|rs)$)/;
 
 export function emptyAnalysis(): Analysis {
   return {
@@ -106,7 +107,11 @@ export function emptyAnalysis(): Analysis {
   };
 }
 
-export function addCall(calls: Map<string, number[]>, name: string, line: number): void {
+export function addCall(
+  calls: Map<string, number[]>,
+  name: string,
+  line: number,
+): void {
   const lines = calls.get(name) ?? [];
   lines.push(line);
   calls.set(name, lines);
@@ -117,9 +122,11 @@ const LINE_COMMENT_MARKER = /^(?:\/\/|#|--)/;
 // Runs of single-line comments on consecutive lines at the same column read as one comment.
 export function mergeLineComments(comments: Comment[]): Comment[] {
   const merged: Comment[] = [];
+
   for (const comment of comments) {
     const previous = merged.at(-1);
     const marker = LINE_COMMENT_MARKER.exec(comment.text)?.[0];
+
     if (
       previous &&
       marker &&
@@ -131,7 +138,9 @@ export function mergeLineComments(comments: Comment[]): Comment[] {
       previous.endLine = comment.line;
       continue;
     }
+
     merged.push({ ...comment });
   }
+
   return merged;
 }

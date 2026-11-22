@@ -3,9 +3,12 @@ import type { Trait } from "../../traits.ts";
 export default {
   name: "code-restraint/coined-name",
   version: 2,
-  subject: "A newly declared name (function, type, variable, constant, property or SQL alias), shown with the code that declares it and the added lines that use it.",
-  requirement: 'The name must describe literally what the thing is or does in plain words. It must not be an invented metaphor, jargon, coined term or compressed abbreviation that needs a glossary, such as calling a cron run an "incarnation", a restarted job a "resurrection" or a pending timer an "arm".',
-  purpose: "A reader who has never seen the codebase must understand the name without a glossary.",
+  subject:
+    "A newly declared name (function, type, variable, constant, property or SQL alias), shown with the code that declares it and the added lines that use it.",
+  requirement:
+    'The name must describe literally what the thing is or does in plain words. It must not be an invented metaphor, jargon, coined term or compressed abbreviation that needs a glossary, such as calling a cron run an "incarnation", a restarted job a "resurrection" or a pending timer an "arm".',
+  purpose:
+    "A reader who has never seen the codebase must understand the name without a glossary.",
   candidate: "identifier",
   check: "clef",
   category: "naming",

@@ -17,11 +17,11 @@ At most 72 characters. One change per title; no comma-joined lists.
 
 `shirei pr create` / `shirei_pr_create` enforce these budgets (prose words, excluding the stack-links block and code blocks). Aim well under them; for direct `gh`/`glab` edits, count yourself.
 
-| Change | Words | Headings |
-|---|---|---|
-| Small: about 100 changed lines or fewer, one concern | at most 80 | none |
-| Medium | at most 200 | optional |
-| Large or cross-system | at most 350, at most 30 lines | allowed |
+| Change                                               | Words                         | Headings |
+| ---------------------------------------------------- | ----------------------------- | -------- |
+| Small: about 100 changed lines or fewer, one concern | at most 80                    | none     |
+| Medium                                               | at most 200                   | optional |
+| Large or cross-system                                | at most 350, at most 30 lines | allowed  |
 
 A description that cannot fit its budget means the change should be split, or the extra content belongs in a README, ADR, or code comment.
 
@@ -36,9 +36,11 @@ Three sections, in this order. Use the headings `## Why`, `## API changes`, and 
    - CLI commands and flags, slash commands, pi tools and their parameters, config and settings keys, environment variables
 
    For each one, show how a caller uses it in a fenced code block: the call, request, or command with realistic arguments and the result or response. For a changed surface, show before and after. Code blocks do not count toward the word budget, so prefer a short example over describing the API in prose. Omit the section when no surface changed.
+
 3. **Validation:** how you know it works, in 1–3 lines or bullets: which tests cover it (and that the regression test fails without the fix), the manual or end-to-end run you did and what it showed, and the one number that matters when there is one. Add "Not validated: X" only when a reviewer would assume X was.
 
 Only when true, after Validation:
+
 - `Needs before merge:` or `Needs after merge:` with steps someone else must take
 - a real limitation a reviewer would otherwise miss
 
@@ -46,9 +48,11 @@ Example (medium change that adds a command and blocks a tool call):
 
 ````markdown
 ## Why
+
 An unattended session launched 13 review agents of its own on top of the automatic audit. The agent can no longer launch reviewers; the user runs the correctness review on demand instead.
 
 ## API changes
+
 New `/correctness [focus]` command, scoped like `/audit`:
 
 ```text
@@ -65,6 +69,7 @@ New `/correctness [focus]` command, scoped like `/audit`:
 ```
 
 ## Validation
+
 - A fake-context test covers every blocked type, resumes, retries after a failed spawn, and subagent sessions.
 - A real `/correctness` run spawned the reviewer in a test worktree and delivered C1–C4; a real `/audit` still spawned its reviewers.
 ````

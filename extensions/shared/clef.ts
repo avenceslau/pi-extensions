@@ -7,29 +7,51 @@ import type { ClefConfig } from "./config.ts";
 const execFileAsync = promisify(execFile);
 
 const CLEF_TIMEOUT_MS = 30_000;
+
 // Both the audit and the hygiene linter send these requests.
 const USER_AGENT = "pi-extensions";
-const NOT_CONFIGURED = "Clef is not configured: add clef to the default export of ~/.pi/agent/pi-extensions.ts";
+const NOT_CONFIGURED =
+  "Clef is not configured: add clef to the default export of ~/.pi/agent/pi-extensions.ts";
+
 // A token command can take about a second, so a JWT is reused until shortly before it expires.
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60_000;
+
 // Clef rejects a call with more questions with a 422.
 export const CLEF_MAX_QUESTIONS = 64;
+
 // Clef rejects a state over 65,529 tokens with a 422 instead of truncating it. Code averages about
 // 3.35 characters per token, so this keeps typical diffs about 10% under the limit.
 export const CLEF_MAX_STATE_CHARS = 200_000;
 const BATCH_CONCURRENCY = 8;
+
 const SECRETS: [RegExp, string][] = [
-  [/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED]"],
-  [/\b(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{16,}|\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]"],
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED]"],
-  [/((?:secret|token|password|api[_-]?key|authorization)["']?\s*[:=]\s*["']?)[^"'\s]{12,}/gi, "$1[REDACTED]"],
+  [
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+    "[REDACTED]",
+  ],
+  [
+    /\b(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{16,}|\bAKIA[0-9A-Z]{16}\b/g,
+    "[REDACTED]",
+  ],
+  [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    "[REDACTED]",
+  ],
+  [
+    /((?:secret|token|password|api[_-]?key|authorization)["']?\s*[:=]\s*["']?)[^"'\s]{12,}/gi,
+    "$1[REDACTED]",
+  ],
 ];
 
 const ClefAnswersSchema = Type.Object({
   answers: Type.Record(Type.String(), Type.Object({ noul: Type.Number() })),
 });
+
 // The Workers AI REST API wraps the model's output in `{ result, success, errors }`; other routes return it bare.
-const ClefResponseSchema = Type.Union([ClefAnswersSchema, Type.Object({ result: ClefAnswersSchema })]);
+const ClefResponseSchema = Type.Union([
+  ClefAnswersSchema,
+  Type.Object({ result: ClefAnswersSchema }),
+]);
 
 export interface ClefQuestion {
   type: "noul";
@@ -56,28 +78,38 @@ export interface ClefBatchAnswers {
   lastError?: string;
 }
 
-let cachedToken: { command: string; value: string; refreshAt: number } | undefined;
+let cachedToken:
+  | { command: string; value: string; refreshAt: number }
+  | undefined;
 
 function redactSecrets(text: string): string {
-  return SECRETS.reduce((redacted, [pattern, replacement]) => redacted.replace(pattern, replacement), text);
+  return SECRETS.reduce(
+    (redacted, [pattern, replacement]) =>
+      redacted.replace(pattern, replacement),
+    text,
+  );
 }
 
 function tokenExpiry(token: string): number | undefined {
   try {
-    const claims = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
+    const claims = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    );
+
     return typeof claims?.exp === "number" ? claims.exp * 1_000 : undefined;
   } catch {
     return undefined;
   }
 }
 
-async function commandToken(commandLine: string[], signal?: AbortSignal): Promise<string> {
+async function commandToken(
+  commandLine: string[],
+  signal?: AbortSignal,
+): Promise<string> {
   const [program, ...args] = commandLine;
   const command = JSON.stringify(commandLine);
-  if (
-    cachedToken?.command === command &&
-    Date.now() < cachedToken.refreshAt
-  ) {
+
+  if (cachedToken?.command === command && Date.now() < cachedToken.refreshAt) {
     return cachedToken.value;
   }
 
@@ -85,23 +117,36 @@ async function commandToken(commandLine: string[], signal?: AbortSignal): Promis
     timeout: CLEF_TIMEOUT_MS,
     signal,
   });
+
   const value = stdout.trim();
+
   if (value === "") {
     throw new Error(`${program} printed no Clef token`);
   }
 
   const expiry = tokenExpiry(value);
-  cachedToken = expiry === undefined ? undefined : { command, value, refreshAt: expiry - TOKEN_REFRESH_MARGIN_MS };
+  cachedToken =
+    expiry === undefined
+      ? undefined
+      : { command, value, refreshAt: expiry - TOKEN_REFRESH_MARGIN_MS };
+
   return value;
 }
 
-async function authHeaders(clef: ClefConfig, signal?: AbortSignal): Promise<Record<string, string>> {
+async function authHeaders(
+  clef: ClefConfig,
+  signal?: AbortSignal,
+): Promise<Record<string, string>> {
   const { auth } = clef;
+
   if (!auth) {
     return {};
   }
 
-  const token = auth.command?.length ? await commandToken(auth.command, signal) : auth.token;
+  const token = auth.command?.length
+    ? await commandToken(auth.command, signal)
+    : auth.token;
+
   return token === undefined ? {} : { [auth.header]: token };
 }
 
@@ -133,6 +178,7 @@ async function requestAnswers(
   signal?: AbortSignal,
 ): Promise<Record<string, number>> {
   const timeout = AbortSignal.timeout(CLEF_TIMEOUT_MS);
+
   const response = await fetch(endpoint.url, {
     method: "POST",
     headers: {
@@ -149,6 +195,7 @@ async function requestAnswers(
     }),
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
+
   if (!response.ok) {
     throw new ClefStatusError(response.status);
   }
@@ -156,13 +203,17 @@ async function requestAnswers(
   const body = Value.Parse(ClefResponseSchema, await response.json());
   const { answers } = "result" in body ? body.result : body;
   const scores: Record<string, number> = {};
+
   for (const key of Object.keys(questions)) {
     const answer = answers[key];
+
     if (!answer) {
       throw new Error(`Clef returned no answer for ${key}`);
     }
+
     scores[key] = answer.noul;
   }
+
   return scores;
 }
 
@@ -175,20 +226,22 @@ export async function askClef<Key extends string>(
   if (!clef) {
     throw new Error(NOT_CONFIGURED);
   }
+
   const auth = await authHeaders(clef, signal);
   const redacted = redactSecrets(state);
   let sent = redacted.slice(0, CLEF_MAX_STATE_CHARS);
   let scores: Record<string, number>;
+
   try {
     scores = await requestAnswers(clef, auth, sent, questions, signal);
   } catch (error) {
     // Text denser than code, such as lockfiles, can exceed the token limit within the character limit.
-    const overTokenLimit =
-      isClefStatusError(error) &&
-      error.status === 422;
+    const overTokenLimit = isClefStatusError(error) && error.status === 422;
+
     if (!overTokenLimit) {
       throw error;
     }
+
     sent = sent.slice(0, Math.floor(sent.length / 2));
     scores = await requestAnswers(clef, auth, sent, questions, signal);
   }
@@ -207,9 +260,14 @@ export async function askClefInBatches(
   batches: ClefBatch[],
   signal?: AbortSignal,
 ): Promise<ClefBatchAnswers> {
-  const calls: { batch: number; offset: number; questions: ClefQuestion[] }[] = [];
+  const calls: { batch: number; offset: number; questions: ClefQuestion[] }[] =
+    [];
   batches.forEach((batch, index) => {
-    for (let offset = 0; offset < batch.questions.length; offset += CLEF_MAX_QUESTIONS) {
+    for (
+      let offset = 0;
+      offset < batch.questions.length;
+      offset += CLEF_MAX_QUESTIONS
+    ) {
       calls.push({
         batch: index,
         offset,
@@ -217,36 +275,41 @@ export async function askClefInBatches(
       });
     }
   });
+
   const result: ClefBatchAnswers = {
     answers: batches.map((batch) => new Array(batch.questions.length)),
     calls: 0,
     failures: 0,
   };
+
   if (calls.length === 0) {
     return result;
   }
 
   let auth: Record<string, string>;
+
   try {
     auth = await authHeaders(clef, signal);
   } catch (error) {
     result.calls = calls.length;
     result.failures = calls.length;
     result.lastError = String(error);
+
     return result;
   }
 
   const states = batches.map((batch) => redactSecrets(batch.state));
   let next = 0;
+
   const worker = async () => {
-    while (
-      next < calls.length &&
-      !signal?.aborted
-    ) {
+    while (next < calls.length && !signal?.aborted) {
       const call = calls[next];
       next += 1;
       result.calls += 1;
-      const questions = Object.fromEntries(call.questions.map((question, index) => [`q${index}`, question]));
+      const questions = Object.fromEntries(
+        call.questions.map((question, index) => [`q${index}`, question]),
+      );
+
       try {
         const scores = await requestAnswers(
           clef,
@@ -255,6 +318,7 @@ export async function askClefInBatches(
           questions,
           signal,
         );
+
         call.questions.forEach((_, index) => {
           result.answers[call.batch][call.offset + index] = scores[`q${index}`];
         });
@@ -264,6 +328,8 @@ export async function askClefInBatches(
       }
     }
   };
+
   await Promise.all(Array.from({ length: BATCH_CONCURRENCY }, worker));
+
   return result;
 }
