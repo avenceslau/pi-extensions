@@ -69,6 +69,7 @@ test("a later config overrides models, model maps and forges key by key, replace
       forges: { "git.a.example": "gitlab" },
       agentRoles: { readOnly: ["a-reader"] },
       sessionFocus: { backend: "pi" },
+      btw: { backend: "herdr" },
     },
     {
       clef: { url: "https://b.example/clef" },
@@ -79,6 +80,7 @@ test("a later config overrides models, model maps and forges key by key, replace
       forges: { "git.b.example": "github" },
       agentRoles: { readOnly: ["b-reader"], review: ["b-reviewer"] },
       sessionFocus: { backend: "rex" },
+      btw: { backend: "rex" },
     },
   );
 
@@ -92,6 +94,7 @@ test("a later config overrides models, model maps and forges key by key, replace
     forges: { "git.a.example": "gitlab", "git.b.example": "github" },
     agentRoles: { readOnly: ["a-reader", "b-reader"], review: ["b-reviewer"] },
     sessionFocus: { backend: "rex" },
+    btw: { backend: "rex" },
   });
 });
 
@@ -135,6 +138,15 @@ test("a user config with a wrongly typed field is rejected with the field's path
   await assert.rejects(
     readUserConfig(path),
     /Invalid config from .*\/forges\/git\.example\.com/,
+  );
+});
+
+test("a user config rejects an unknown BTW backend", async () => {
+  const path = tempConfigPath();
+  writeFileSync(path, 'export default { btw: { backend: "tmux" } };\n');
+  await assert.rejects(
+    readUserConfig(path),
+    /Invalid config from .*\/btw\/backend/,
   );
 });
 

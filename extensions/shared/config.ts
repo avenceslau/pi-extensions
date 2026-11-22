@@ -56,6 +56,13 @@ const SessionFocusConfigSchema = Type.Object({
 });
 
 const PiExtensionsConfigSchema = Type.Object({
+  btw: Type.Optional(
+    Type.Object({
+      backend: Type.Optional(
+        Type.Union([Type.Literal("herdr"), Type.Literal("rex")]),
+      ),
+    }),
+  ),
   clef: Type.Optional(ClefConfigSchema),
   models: Type.Optional(ModelsConfigSchema),
   forges: Type.Optional(Type.Record(Type.String(), ForgeSchema)),
@@ -174,6 +181,10 @@ export function mergeConfig(
   override: PiExtensionsConfig,
 ): PiExtensionsConfig {
   return {
+    btw: {
+      ...base.btw,
+      ...override.btw,
+    },
     clef: override.clef ?? base.clef,
     models: {
       ...base.models,

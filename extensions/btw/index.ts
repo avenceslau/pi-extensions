@@ -14,7 +14,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "../shared/config.ts";
+import { loadConfig, refreshUserConfig } from "../shared/config.ts";
 
 type MergePayload = {
   id: string;
@@ -37,8 +37,21 @@ type PaneSplitResponse = {
   };
 };
 
+type SideSessionRequest = {
+  paneId: string;
+  cwd: string;
+  parentSessionPath: string;
+  model: string;
+  question: string;
+  name: string;
+  thinking: string;
+  environment: string[];
+};
+
 const HERDR_ENV = process.env.HERDR_ENV;
 const HERDR_PANE_ID = process.env.HERDR_PANE_ID;
+const REX_SESSION = process.env.REX_SESSION;
+const REX_BLOCK = process.env.REX_BLOCK;
 const BTW_PARENT_AGENT_DIR = process.env.BTW_PARENT_AGENT_DIR;
 const BTW_PARENT_PANE_ID = process.env.BTW_PARENT_PANE_ID;
 const BTW_PARENT_SESSION_ID = process.env.BTW_PARENT_SESSION_ID;
@@ -61,6 +74,7 @@ export default function (pi: ExtensionAPI) {
   let sessionActive = false;
   let sessionGeneration = 0;
   let currentSessionId: string | undefined;
+  let currentPaneId: string | undefined;
   let childState: ChildState | undefined;
   let merged = false;
 
@@ -73,7 +87,7 @@ export default function (pi: ExtensionAPI) {
 
     const generation = sessionGeneration;
     const sessionId = currentSessionId;
-    const paneId = HERDR_PANE_ID;
+    const paneId = currentPaneId;
 
     if (!sessionActive || !sessionId || !paneId) {
       return;
@@ -281,7 +295,24 @@ export default function (pi: ExtensionAPI) {
       pi.appendEntry("btw-child", childState);
     }
 
-    if (ctx.mode !== "tui" || HERDR_ENV !== "1" || !HERDR_PANE_ID) {
+    try {
+      await refreshUserConfig();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Could not load BTW configuration: ${message}`, "error");
+
+      return;
+    }
+
+    const backend = loadConfig(pi).btw?.backend ?? "herdr";
+    currentPaneId =
+      backend === "rex"
+        ? REX_BLOCK
+        : HERDR_ENV === "1"
+          ? HERDR_PANE_ID
+          : undefined;
+
+    if (ctx.mode !== "tui" || !currentPaneId) {
       return;
     }
 
@@ -290,7 +321,7 @@ export default function (pi: ExtensionAPI) {
     const inbox = join(
       getAgentDir(),
       "btw",
-      encodeURIComponent(HERDR_PANE_ID),
+      encodeURIComponent(currentPaneId),
       encodeURIComponent(currentSessionId),
     );
 
@@ -320,6 +351,7 @@ export default function (pi: ExtensionAPI) {
     sessionActive = false;
     sessionGeneration += 1;
     currentSessionId = undefined;
+    currentPaneId = undefined;
     inboxWatcher?.close();
     inboxWatcher = undefined;
 
@@ -329,8 +361,127 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  async function startRexSideSession(
+    ctx: ExtensionContext,
+    request: SideSessionRequest,
+  ): Promise<void> {
+    const args = [
+      "split",
+      "--session",
+      REX_SESSION!,
+      "--block",
+      request.paneId,
+      "--split=right",
+      "--ratio",
+      "50",
+      "--focus=false",
+      "--cwd",
+      request.cwd,
+      "--json",
+      "--",
+      "env",
+      ...request.environment,
+      "pi",
+      "--fork",
+      request.parentSessionPath,
+      "--name",
+      request.name,
+      "--append-system-prompt",
+      CHILD_SYSTEM_PROMPT,
+      "--model",
+      request.model,
+      "--thinking",
+      request.thinking,
+      request.question,
+    ];
+    const created = await pi.exec("rex", args, { timeout: 5000 });
+
+    if (created.code !== 0) {
+      ctx.ui.notify(
+        created.stderr.trim() || "Could not create BTW pane in Rex",
+        "error",
+      );
+    }
+  }
+
+  async function startHerdrSideSession(
+    ctx: ExtensionContext,
+    request: SideSessionRequest,
+  ): Promise<void> {
+    const args = [
+      "pane",
+      "split",
+      "--pane",
+      request.paneId,
+      "--direction",
+      "right",
+      "--ratio",
+      "0.5",
+      "--cwd",
+      request.cwd,
+      ...request.environment.flatMap((value) => ["--env", value]),
+      "--no-focus",
+    ];
+    const created = await pi.exec("herdr", args, { timeout: 5000 });
+
+    if (created.code !== 0) {
+      ctx.ui.notify(
+        created.stderr.trim() || "Could not create BTW pane",
+        "error",
+      );
+
+      return;
+    }
+
+    let response: PaneSplitResponse;
+
+    try {
+      response = JSON.parse(created.stdout) as PaneSplitResponse;
+    } catch {
+      ctx.ui.notify("Herdr returned an invalid pane-split response", "error");
+
+      return;
+    }
+
+    const paneId = response.result?.pane?.pane_id;
+
+    if (!paneId) {
+      ctx.ui.notify("Herdr did not return the new BTW pane", "error");
+
+      return;
+    }
+
+    const childCommand = [
+      "exec pi",
+      '--fork "$BTW_PARENT_SESSION_PATH"',
+      '--name "$BTW_SESSION_NAME"',
+      '--append-system-prompt "$BTW_SYSTEM_PROMPT"',
+      '--model "$BTW_MODEL"',
+      '--thinking "$BTW_THINKING"',
+      '"$BTW_QUESTION"',
+    ].join(" ");
+    const started = await pi.exec(
+      "herdr",
+      ["pane", "run", paneId, childCommand],
+      { timeout: 5000 },
+    );
+
+    if (started.code !== 0 && !started.killed) {
+      await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5000 });
+      ctx.ui.notify(
+        started.stderr.trim() || "Could not start BTW Pi session",
+        "error",
+      );
+    } else if (started.killed) {
+      ctx.ui.notify(
+        "BTW pane was created, but Pi startup could not be confirmed",
+        "warning",
+      );
+    }
+  }
+
   pi.registerCommand("btw", {
-    description: "Ask a side question in a new right-hand Herdr pane",
+    description: "Ask a side question in a new right-hand pane",
     handler: async (args, ctx) => {
       const question = args.trim();
 
@@ -346,8 +497,19 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      if (ctx.mode !== "tui" || HERDR_ENV !== "1" || !HERDR_PANE_ID) {
-        ctx.ui.notify("/btw requires Pi to be running inside Herdr", "error");
+      const config = loadConfig(pi);
+      const backend = config.btw?.backend ?? "herdr";
+      const targetPaneId = backend === "rex" ? REX_BLOCK : HERDR_PANE_ID;
+      if (
+        ctx.mode !== "tui" ||
+        !targetPaneId ||
+        (backend === "rex" ? !REX_SESSION : HERDR_ENV !== "1")
+      ) {
+        const backendName = backend === "rex" ? "Rex" : "Herdr";
+        ctx.ui.notify(
+          `/btw requires Pi to be running inside ${backendName}`,
+          "error",
+        );
 
         return;
       }
@@ -362,7 +524,7 @@ export default function (pi: ExtensionAPI) {
 
       // The side session runs on the configured model, or on the parent's.
       const model =
-        loadConfig(pi).models?.extensions?.btw ??
+        config.models?.extensions?.btw ??
         (ctx.model && `${ctx.model.provider}/${ctx.model.id}`);
 
       if (!model) {
@@ -378,94 +540,36 @@ export default function (pi: ExtensionAPI) {
 
       const env = {
         BTW_PARENT_AGENT_DIR: getAgentDir(),
-        BTW_PARENT_PANE_ID: HERDR_PANE_ID,
+        BTW_PARENT_PANE_ID: targetPaneId,
         BTW_PARENT_SESSION_ID: ctx.sessionManager.getSessionId(),
         BTW_PARENT_SESSION_PATH: parentSessionPath,
         BTW_QUESTION: question,
         BTW_SESSION_NAME: `BTW: ${title}`,
         BTW_SYSTEM_PROMPT: CHILD_SYSTEM_PROMPT,
         BTW_MODEL: model,
-        BTW_THINKING: pi.getThinkingLevel(),
+        BTW_THINKING: String(pi.getThinkingLevel()),
+      };
+      const environment = Object.entries(env).map(
+        ([name, value]) => `${name}=${value}`,
+      );
+      const request: SideSessionRequest = {
+        paneId: targetPaneId,
+        cwd: ctx.cwd,
+        parentSessionPath,
+        model,
+        question,
+        name: env.BTW_SESSION_NAME,
+        thinking: env.BTW_THINKING,
+        environment,
       };
 
-      const createArgs = [
-        "pane",
-        "split",
-        "--pane",
-        HERDR_PANE_ID,
-        "--direction",
-        "right",
-        "--ratio",
-        "0.5",
-        "--cwd",
-        ctx.cwd,
-      ];
-
-      for (const [name, value] of Object.entries(env)) {
-        createArgs.push("--env", `${name}=${value}`);
-      }
-
-      createArgs.push("--no-focus");
-
-      const created = await pi.exec("herdr", createArgs, { timeout: 5000 });
-
-      if (created.code !== 0) {
-        ctx.ui.notify(
-          created.stderr.trim() || "Could not create BTW pane",
-          "error",
-        );
+      if (backend === "rex") {
+        await startRexSideSession(ctx, request);
 
         return;
       }
 
-      let response: PaneSplitResponse;
-
-      try {
-        response = JSON.parse(created.stdout) as PaneSplitResponse;
-      } catch {
-        ctx.ui.notify("Herdr returned an invalid pane-split response", "error");
-
-        return;
-      }
-
-      const paneId = response.result?.pane?.pane_id;
-
-      if (!paneId) {
-        ctx.ui.notify("Herdr did not return the new BTW pane", "error");
-
-        return;
-      }
-
-      const childCommand = [
-        "exec pi",
-        '--fork "$BTW_PARENT_SESSION_PATH"',
-        '--name "$BTW_SESSION_NAME"',
-        '--append-system-prompt "$BTW_SYSTEM_PROMPT"',
-        '--model "$BTW_MODEL"',
-        '--thinking "$BTW_THINKING"',
-        '"$BTW_QUESTION"',
-      ].join(" ");
-
-      const started = await pi.exec(
-        "herdr",
-        ["pane", "run", paneId, childCommand],
-        {
-          timeout: 5000,
-        },
-      );
-
-      if (started.code !== 0 && !started.killed) {
-        await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5000 });
-        ctx.ui.notify(
-          started.stderr.trim() || "Could not start BTW Pi session",
-          "error",
-        );
-      } else if (started.killed) {
-        ctx.ui.notify(
-          "BTW pane was created, but Pi startup could not be confirmed",
-          "warning",
-        );
-      }
+      await startHerdrSideSession(ctx, request);
     },
   });
 
