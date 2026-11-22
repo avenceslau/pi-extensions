@@ -11,6 +11,14 @@ pi install git:github.com/avenceslau/pi-extensions
 
 Run `/reload` in Pi after updating the package.
 
+## Host your own Clef endpoint
+
+The [Clef-only Worker](workers/clef/README.md) uses Workers AI and AI Gateway behind Cloudflare Access,
+with a 24-hour email-authenticated session and no Cloudflare API token stored in Pi.
+The Worker denies requests until you finish the documented Access setup.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/avenceslau/pi-extensions/tree/main/workers/clef)
+
 ## Config
 
 `extensions/shared/config.ts` gives the extensions one config: what installed packages contribute, overridden by
