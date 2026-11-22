@@ -60,6 +60,8 @@ const BTW_QUESTION = process.env.BTW_QUESTION;
 
 // Side questions always run on Opus 5.5, whatever the parent session uses.
 
+const SIDE_SESSION_TITLE_MAX_LENGTH = 48;
+
 const CHILD_SYSTEM_PROMPT = [
   "You are in a BTW side session forked from another Pi conversation.",
   "Answer the side question directly and concisely.",
@@ -541,7 +543,9 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const title = question.replace(/\s+/g, " ").slice(0, 48);
+    const title = question
+      .replace(/\s+/g, " ")
+      .slice(0, SIDE_SESSION_TITLE_MAX_LENGTH);
     const env = {
       BTW_PARENT_AGENT_DIR: getAgentDir(),
       BTW_PARENT_PANE_ID: paneId,
