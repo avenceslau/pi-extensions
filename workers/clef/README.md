@@ -119,8 +119,8 @@ npm run check
 npm run deploy -- --dry-run
 ```
 
-`npm run check` runs Oxfmt, TSRS type-checking and Oxlint with the vendored anti-slop rules and
-`@durability/lint`.
+`npm run check` runs Oxfmt, TSRS type-checking and the Worker-specific `@durability/lint` rules. From the
+repository root, `npm run lint` applies the vendored anti-slop rules to every extension and Worker TypeScript file.
 Tests sign real JWTs and use a local mock JWKS response and AI binding. They cover expired/wrongly signed tokens,
 wrong audiences, unauthorized emails, long-lived and non-user tokens, missing configuration, route/method/input
 limits, fixed model selection, and sanitized inference failures. `wrangler dev` is not an anonymous development

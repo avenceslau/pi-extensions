@@ -45,15 +45,19 @@ interface AuditBase {
 // The file may not exist yet, so its nearest existing ancestor locates the repository.
 export async function locateFile(file: string): Promise<{ root: string; path: string } | undefined> {
   let dir = dirname(file);
+
   while (!existsSync(dir)) {
     dir = dirname(dir);
   }
 
   const output = await git(dir, ["rev-parse", "--show-toplevel", "--show-prefix"]).catch(() => undefined);
+
   if (!output) {
     return undefined;
   }
+
   const [root = "", prefix = ""] = output.split("\n");
+
   return { root, path: `${prefix}${relative(dir, file)}` };
 }
 
@@ -65,16 +69,20 @@ export async function worktreeState(root: string): Promise<Map<string, string>> 
     ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
     { untrimmed: true },
   );
+
   const state = new Map<string, string>();
   const fields = status.split("\0");
+
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i] ?? "";
+
     if (field.length < 4) {
       continue;
     }
 
     const code = field.slice(0, 2);
     state.set(field.slice(3), code);
+
     // A rename or copy is followed by the path it came from.
     if (/[RC]/.test(code)) {
       i += 1;
@@ -85,16 +93,20 @@ export async function worktreeState(root: string): Promise<Map<string, string>> 
   const files = [...state.keys()].filter((path) => {
     return statSync(join(root, path), { throwIfNoEntry: false })?.isFile();
   });
+
   if (files.length === 0) {
     return state;
   }
+
   const hashes = (await git(root, ["hash-object", "--", ...files])).split("\n");
   files.forEach((path, i) => state.set(path, `${state.get(path)} ${hashes[i]}`));
+
   return state;
 }
 
 export function changedPaths(before: Map<string, string>, after: Map<string, string>): string[] {
   const paths = new Set([...before.keys(), ...after.keys()]);
+
   return [...paths].filter((path) => before.get(path) !== after.get(path));
 }
 
@@ -103,6 +115,7 @@ export function changedPaths(before: Map<string, string>, after: Map<string, str
 // because `git add` rejects them; diffing against the snapshot still shows them as deleted.
 export async function snapshotPaths(root: string, paths: string[]): Promise<string> {
   const index = join(tmpdir(), `pi-post-change-audit-${randomUUID()}`);
+
   const env = {
     GIT_INDEX_FILE: index,
     ...LITERAL_PATHSPECS,
@@ -110,6 +123,7 @@ export async function snapshotPaths(root: string, paths: string[]): Promise<stri
 
   try {
     await git(root, ["read-tree", "HEAD"], { env }).catch(() => git(root, ["read-tree", "--empty"], { env }));
+
     // Without paths, ls-files would list the whole worktree.
     if (paths.length === 0) {
       return await git(root, ["write-tree"], { env });
@@ -120,10 +134,13 @@ export async function snapshotPaths(root: string, paths: string[]): Promise<stri
       ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths],
       { env },
     );
+
     const existing = present.split("\0").filter(Boolean);
+
     if (existing.length > 0) {
       await git(root, ["add", "-A", "--", ...existing], { env });
     }
+
     return await git(root, ["write-tree"], { env });
   } finally {
     await rm(index, { force: true });
@@ -132,23 +149,28 @@ export async function snapshotPaths(root: string, paths: string[]): Promise<stri
 
 async function stackParent(root: string, branch: string): Promise<string | undefined> {
   const state: unknown = await readFile(SHIREI_STATE, "utf8").then(JSON.parse, () => undefined);
+
   if (!Value.Check(ShireiStateSchema, state)) {
     return undefined;
   }
 
   const commonDir = await git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+
   for (const entry of state.stack_branches ?? []) {
     if (entry.branch !== branch) {
       continue;
     }
+
     const entryCommonDir = await git(
       entry.repo,
       ["rev-parse", "--path-format=absolute", "--git-common-dir"],
     ).catch(() => undefined);
+
     if (entryCommonDir === commonDir) {
       return entry.base;
     }
   }
+
   return undefined;
 }
 
@@ -169,6 +191,7 @@ export async function auditBase(root: string): Promise<AuditBase> {
 
   for (const ref of [`origin/${parent}`, parent]) {
     const commit = await git(root, ["merge-base", "HEAD", ref]).catch(() => undefined);
+
     if (commit) {
       return {
         tree: await git(root, ["rev-parse", `${commit}^{tree}`]),
@@ -181,5 +204,6 @@ export async function auditBase(root: string): Promise<AuditBase> {
   const head = await git(root, ["rev-parse", "-q", "--verify", "HEAD^{tree}"]).catch(() => {
     return git(root, ["hash-object", "-t", "tree", "/dev/null"]);
   });
+
   return { tree: head, description: "HEAD" };
 }

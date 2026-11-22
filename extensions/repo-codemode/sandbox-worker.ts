@@ -13,11 +13,15 @@ parentPort.on("message", (message) => {
 	if (message?.type !== "callResult" || typeof message.id !== "number") {
 		return;
 	}
+
 	const call = pending.get(message.id);
+
 	if (!call) {
 		return;
 	}
+
 	pending.delete(message.id);
+
 	if (typeof message.error === "string") {
 		call.reject(new Error(message.error));
 	} else {
@@ -45,24 +49,29 @@ const hostRepo = {
 const boundedError = (error) => {
 	let name = "Error";
 	let message = "Sandbox execution failed";
+
 	try {
 		if (typeof error?.name === "string") {
 			name = error.name.slice(0, 100);
 		}
+
 		if (typeof error?.message === "string") {
 			message = error.message.slice(0, 4096);
 		}
 	} catch {}
+
 	return `${name}: ${message}`;
 };
 
 try {
 	const { runSandboxed } = await loadAsyncQuickJs(variant);
+
 	const result = await runSandboxed(
 		async ({ ctx, evalCode }) => {
 			ctx.runtime.setModuleLoader(() => {
 				throw new Error("Imports are disabled in repo_execute");
 			});
+
 			return evalCode(`
 const repo = ((host) => {
   const string = (value, name, optional = false) => {
@@ -158,6 +167,7 @@ export default output;
 			},
 		},
 	);
+
 	if (!result.ok) {
 		parentPort.postMessage({ type: "done", error: `${result.error.name}: ${result.error.message}`.slice(0, 4096) });
 	} else if (result.data?.sandboxError) {

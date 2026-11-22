@@ -5,6 +5,7 @@ import { countAdded, type ChangedFile } from "./diff.ts";
 const COMMENT_CONTEXT_BEFORE_LINES = 12;
 const COMMENT_CONTEXT_AFTER_LINES = 30;
 const COMMENT_CONTEXT_MIN_AFTER_LINES = 8;
+
 // A comment inside a longer statement, such as a whole function, is too far from most of its lines to describe them.
 const STALE_COMMENT_MAX_STATEMENT_LINES = 60;
 const HASH_COMMENT_FILE = /\.(?:py|rb|sh|bash)$/;
@@ -43,10 +44,12 @@ const C_SYNTAX: CommentSyntax = {
   line: "//",
   block: ["/*", "*/"],
 };
+
 const HASH_SYNTAX: CommentSyntax = {
   line: "#",
   lineAfterSpace: true,
 };
+
 const LUA_SYNTAX: CommentSyntax = {
   line: "--",
   block: ["--[[", "]]"],
@@ -56,6 +59,7 @@ function syntaxFor(path: string): CommentSyntax {
   if (HASH_COMMENT_FILE.test(path)) {
     return HASH_SYNTAX;
   }
+
   return LUA_FILE.test(path) ? LUA_SYNTAX : C_SYNTAX;
 }
 
@@ -67,24 +71,30 @@ function lineCount(text: string): number {
 // the others end at the closing quote or the end of the line.
 function stringEnd(source: string, start: number): number {
   const triple = TRIPLE_QUOTES.find((quote) => source.startsWith(quote, start));
+
   if (triple) {
     const close = source.indexOf(triple, start + triple.length);
+
     return close === -1 ? source.length : close + triple.length;
   }
 
   const quote = source[start];
+
   for (let index = start + 1; index < source.length; index += 1) {
     if (source[index] === "\\") {
       index += 1;
       continue;
     }
+
     if (source[index] === quote) {
       return index + 1;
     }
+
     if (source[index] === "\n" && quote !== "`") {
       return index;
     }
   }
+
   return source.length;
 }
 
@@ -92,6 +102,7 @@ function lineCommentStarts(source: string, index: number, syntax: CommentSyntax)
   if (!source.startsWith(syntax.line, index)) {
     return false;
   }
+
   return !syntax.lineAfterSpace || index === 0 || /\s/.test(source[index - 1]);
 }
 
@@ -102,8 +113,10 @@ export function lexComments(path: string, source: string): Comment[] {
   let line = 1;
   let lineStart = 0;
   let index = 0;
+
   while (index < source.length) {
     const char = source[index];
+
     if (char === "\n") {
       line += 1;
       index += 1;
@@ -114,16 +127,19 @@ export function lexComments(path: string, source: string): Comment[] {
     if (QUOTES.has(char)) {
       const end = stringEnd(source, index);
       const text = source.slice(index, end);
+
       if (text.includes("\n")) {
         line += lineCount(text);
         lineStart = index + text.lastIndexOf("\n") + 1;
       }
+
       index = end;
       continue;
     }
 
     const [open, close] = syntax.block ?? [];
     let end: number | undefined;
+
     if (open && close && source.startsWith(open, index)) {
       const found = source.indexOf(close, index + open.length);
       end = found === -1 ? source.length : found + close.length;
@@ -131,6 +147,7 @@ export function lexComments(path: string, source: string): Comment[] {
       const found = source.indexOf("\n", index);
       end = found === -1 ? source.length : found;
     }
+
     if (end === undefined) {
       index += 1;
       continue;
@@ -143,21 +160,26 @@ export function lexComments(path: string, source: string): Comment[] {
       column: index - lineStart + 1,
       text,
     });
+
     if (text.includes("\n")) {
       line += lineCount(text);
       lineStart = index + text.lastIndexOf("\n") + 1;
     }
+
     index = end;
   }
+
   return mergeLineComments(comments);
 }
 
 // The outermost statement that starts on the comment's last line or the line after it.
 function statementBelow(comment: Comment, statements: Span[]): Span | undefined {
   let below: Span | undefined;
+
   for (const statement of statements) {
     const startsNext = statement.line >= comment.line && statement.line <= comment.endLine + 1;
     const longer = !below || statement.endLine > below.endLine;
+
     if (
       startsNext &&
       statement.endLine > comment.endLine &&
@@ -166,18 +188,22 @@ function statementBelow(comment: Comment, statements: Span[]): Span | undefined 
       below = statement;
     }
   }
+
   return below;
 }
 
 function innermostAround(comment: Comment, spans: Span[]): Span | undefined {
   let around: Span | undefined;
+
   for (const span of spans) {
     const encloses = span.line < comment.line && span.endLine >= comment.endLine;
     const shorter = !around || span.endLine - span.line < around.endLine - around.line;
+
     if (encloses && shorter) {
       around = span;
     }
   }
+
   return around;
 }
 
@@ -188,11 +214,13 @@ function commentContext(comment: Comment, analysis: Analysis | undefined): LineR
   const around = innermostAround(comment, functions) ?? innermostAround(comment, statements);
   const below = statementBelow(comment, statements);
   const scopeStart = around?.line ?? comment.line;
+
   const scopeEnd = Math.max(
     around?.endLine ?? 0,
     below?.endLine ?? 0,
     comment.endLine + COMMENT_CONTEXT_MIN_AFTER_LINES,
   );
+
   return {
     start: Math.max(scopeStart, comment.line - COMMENT_CONTEXT_BEFORE_LINES),
     end: Math.min(scopeEnd, comment.endLine + COMMENT_CONTEXT_AFTER_LINES),
@@ -206,9 +234,11 @@ function lineRanges(lines: number[]): string {
     if (lines[index + 1] === line + 1) {
       return;
     }
+
     ranges.push(start === line ? `${line}` : `${start}-${line}`);
     start = lines[index + 1];
   });
+
   return ranges.join(", ");
 }
 
@@ -220,8 +250,10 @@ function staleContext(
 ): (LineRange & { edited: number[] }) | undefined {
   const below = statementBelow(comment, analysis.statements);
   const around = innermostAround(comment, analysis.statements);
+
   const statement =
     below ?? (around && around.endLine - around.line < STALE_COMMENT_MAX_STATEMENT_LINES ? around : undefined);
+
   if (!statement) {
     return undefined;
   }
@@ -229,14 +261,17 @@ function staleContext(
   const start = Math.max(statement.line, comment.line - COMMENT_CONTEXT_BEFORE_LINES);
   const end = Math.min(statement.endLine, comment.endLine + COMMENT_CONTEXT_AFTER_LINES);
   const edited: number[] = [];
+
   for (let line = start; line <= end; line += 1) {
     if (file.added.has(line)) {
       edited.push(line);
     }
   }
+
   if (edited.length === 0) {
     return undefined;
   }
+
   return {
     start,
     end,
@@ -252,6 +287,7 @@ function candidate(
   change: CommentCandidate["change"],
 ): CommentCandidate {
   const start = Math.max(1, Math.min(context.start, comment.line));
+
   return {
     path,
     line: comment.line,
@@ -273,13 +309,16 @@ export function commentCandidates(
 ): CommentCandidate[] {
   const comments = analysis?.comments ?? lexComments(path, lines.join("\n"));
   const candidates: CommentCandidate[] = [];
+
   for (const comment of comments) {
     if (countAdded(file.added, comment.line, comment.endLine) > 0) {
       const context = commentContext(comment, analysis);
       candidates.push(candidate(path, comment, lines, context, "added"));
       continue;
     }
+
     const stale = analysis && file.status !== "A" ? staleContext(comment, file, analysis) : undefined;
+
     if (stale) {
       candidates.push({
         ...candidate(path, comment, lines, stale, "stale"),
@@ -287,5 +326,6 @@ export function commentCandidates(
       });
     }
   }
+
   return candidates;
 }

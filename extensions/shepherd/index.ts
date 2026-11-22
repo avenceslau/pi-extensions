@@ -115,6 +115,7 @@ export default function shepherd(pi: ExtensionAPI): void {
 
   function restore(ctx: ExtensionContext): void {
     let state: SavedShepherdState | undefined;
+
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type === "custom" && entry.customType === STATE_TYPE) {
         state = entry.data as SavedShepherdState | undefined;
@@ -136,29 +137,36 @@ export default function shepherd(pi: ExtensionAPI): void {
   function displayKey(review: Review): string {
     const separator = review.forge === "github" ? "#" : "!";
     const repository = review.repository.split("/").slice(-2).join("/");
+
     return `${repository}${separator}${review.number}`;
   }
 
   function phaseSummary(review: Review): string {
     const phase = phases.get(review.key) ?? "idle";
     const loop = correctionLoops[review.key] ?? 0;
+
     if (phase === "working") {
       return loop > 0
         ? `corrective worker ${loop}/${MAX_CORRECTION_LOOPS}`
         : "worker running";
     }
+
     if (phase === "reviewing") {
       const cycle = reviewCycles.get(review.key);
       const completed = cycle ? 2 - cycle.pending.size : 0;
       const correction = loop > 0 ? ` · loop ${loop}/${MAX_CORRECTION_LOOPS}` : "";
+
       return `adversarial review ${completed}/2${correction}`;
     }
+
     if (phase === "reviewed") {
       return "adversarial review complete";
     }
+
     if (phase === "blocked") {
       return "blocked";
     }
+
     return review.summary;
   }
 
@@ -168,6 +176,7 @@ export default function shepherd(pi: ExtensionAPI): void {
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/, "")
       .trim();
+
     return normalized !== "[]";
   }
 
@@ -180,9 +189,11 @@ export default function shepherd(pi: ExtensionAPI): void {
       .map(({ kind, result }) => {
         const text = result.trim();
         const bounded = text.length > 4_000 ? `${text.slice(0, 4_000)}\n[truncated]` : text;
+
         return `## ${kind}\n${bounded || "No output."}`;
       })
       .join("\n\n");
+
     pi.sendMessage(
       {
         customType: "shepherd-report",
@@ -203,9 +214,11 @@ export default function shepherd(pi: ExtensionAPI): void {
       .map((line) => line.trim())
       .filter(Boolean)
       .at(-1);
+
     if (response) {
       return response.length > 100 ? `${response.slice(0, 97)}...` : response;
     }
+
     return `starting · turn ${preview.turnCount}`;
   }
 
@@ -213,26 +226,32 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (!active) {
       ctx.ui.setStatus("shepherd", undefined);
       ctx.ui.setWidget("shepherd", undefined);
+
       return;
     }
 
     const flock = selectedReviews();
     ctx.ui.setStatus("shepherd", `shepherd:${flock.length}`);
     const lines = [ctx.ui.theme.fg("accent", ctx.ui.theme.bold("Shepherd"))];
+
     for (const review of flock.slice(0, 8)) {
       const phase = phases.get(review.key) ?? "idle";
       let color: "muted" | "success" | "warning" = "muted";
+
       if (phase === "blocked" || review.status === "actionable") {
         color = "warning";
       } else if (phase === "reviewed" || review.status === "ready") {
         color = "success";
       }
+
       lines.push(
         `${ctx.ui.theme.fg(color, "●")} ${displayKey(review)} · ${phaseSummary(review)}`,
       );
+
       const previews = [...agentPreviews.values()]
         .filter((preview) => preview.reviewKey === review.key)
         .slice(0, 2);
+
       for (const preview of previews) {
         lines.push(
           ctx.ui.theme.fg(
@@ -242,12 +261,15 @@ export default function shepherd(pi: ExtensionAPI): void {
         );
       }
     }
+
     if (flock.length > 8) {
       lines.push(ctx.ui.theme.fg("dim", `… ${flock.length - 8} more`));
     }
+
     if (flock.length === 0) {
       lines.push(ctx.ui.theme.fg("muted", "No selected reviews are currently available"));
     }
+
     ctx.ui.setWidget("shepherd", lines);
   }
 
@@ -255,13 +277,17 @@ export default function shepherd(pi: ExtensionAPI): void {
     await Promise.all(
       selectedReviews().map(async (review) => {
         const expected = reviewedFingerprints.get(review.key);
+
         if (!expected) {
           return;
         }
+
         const current = await worktreeFingerprint(pi, review.worktree);
+
         if (current === expected) {
           return;
         }
+
         reviewedFingerprints.delete(review.key);
         phases.set(review.key, "idle");
       }),
@@ -277,12 +303,15 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (notify && result.warnings.length > 0) {
       ctx.ui.notify(`Shepherd refresh completed with ${result.warnings.length} warning(s)`, "warning");
     }
+
     for (const review of selectedReviews()) {
       const old = previous.get(review.key);
+
       if (old && old.summary !== review.summary) {
         ctx.ui.notify(`${displayKey(review)}: ${review.summary}`, review.status === "actionable" ? "warning" : "info");
       }
     }
+
     updateUi(ctx);
   }
 
@@ -294,6 +323,7 @@ export default function shepherd(pi: ExtensionAPI): void {
     refreshPromise = doRefresh(ctx, notify).finally(() => {
       refreshPromise = undefined;
     });
+
     return refreshPromise;
   }
 
@@ -301,6 +331,7 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (pollTimer) {
       clearInterval(pollTimer);
     }
+
     pollTimer = setInterval(() => {
       void refresh(ctx).catch((error) => {
         ctx.ui.notify(`Shepherd refresh failed: ${String(error)}`, "warning");
@@ -318,10 +349,13 @@ export default function shepherd(pi: ExtensionAPI): void {
 
   function resolveReview(value: string): Review | undefined {
     const query = value.trim();
+
     if (!query) {
       return undefined;
     }
+
     const exact = reviews.get(query);
+
     if (exact && selected.has(exact.key)) {
       return exact;
     }
@@ -329,6 +363,7 @@ export default function shepherd(pi: ExtensionAPI): void {
     const matches = selectedReviews().filter((review) => {
       return review.key.endsWith(query) || displayKey(review) === query;
     });
+
     return matches.length === 1 ? matches[0] : undefined;
   }
 
@@ -346,17 +381,21 @@ export default function shepherd(pi: ExtensionAPI): void {
       responseText: "",
       turnCount: 1,
     };
+
     const refreshPreview = () => {
       if (currentCtx) {
         updateUi(currentCtx);
       }
     };
+
     // pi-subagents' manager takes a resolved model, while its RPC also accepts one.
     const modelRef = loadConfig(pi).models?.agents?.[type];
     const separator = modelRef?.indexOf("/") ?? -1;
+
     const model = modelRef && separator > 0
       ? currentCtx?.modelRegistry.find(modelRef.slice(0, separator), modelRef.slice(separator + 1))
       : undefined;
+
     const options = {
       cwd: review.worktree,
       description,
@@ -368,11 +407,14 @@ export default function shepherd(pi: ExtensionAPI): void {
           preview.activeTools.push(activity.toolName);
         } else {
           const index = preview.activeTools.indexOf(activity.toolName);
+
           if (index >= 0) {
             preview.activeTools.splice(index, 1);
           }
+
           preview.toolUses += 1;
         }
+
         refreshPreview();
       },
       onTextDelta: (_delta: string, fullText: string) => {
@@ -388,29 +430,37 @@ export default function shepherd(pi: ExtensionAPI): void {
     const registry = (globalThis as any)[
       Symbol.for("pi-subagents:manager")
     ] as SubagentManagerRegistry | undefined;
+
     if (registry && currentCtx) {
       const id = registry.spawn(pi, currentCtx, type, prompt, options);
       agentPreviews.set(id, preview);
       updateUi(currentCtx);
+
       return id;
     }
 
     const requestId = randomUUID();
+
     return new Promise<string>((resolve, reject) => {
       const channel = `subagents:rpc:spawn:reply:${requestId}`;
+
       const unsubscribe = pi.events.on(channel, (data) => {
         clearTimeout(timeout);
         unsubscribe();
         const reply = data as SpawnReply;
         const id = reply.data?.id;
+
         if (!reply.success || !id) {
           reject(new Error(reply.error ?? "Subagent spawn failed"));
+
           return;
         }
+
         agentPreviews.set(id, preview);
         refreshPreview();
         resolve(id);
       });
+
       const timeout = setTimeout(() => {
         unsubscribe();
         reject(new Error("Subagent extension is unavailable in this process; restart Pi and resume the session"));
@@ -432,15 +482,19 @@ export default function shepherd(pi: ExtensionAPI): void {
     continuation = false,
   ): Promise<string> {
     const phase = phases.get(review.key) ?? "idle";
+
     if (phase === "working" || phase === "reviewing") {
       throw new Error(`${displayKey(review)} already has active Shepherd work`);
     }
+
     if (!continuation) {
       correctionLoops[review.key] = 0;
       persist();
     }
+
     const blockedReason = await worktreeBlockedReason(pi, review.worktree);
     const resumingRebase = blockedReason?.startsWith("rebase in progress") === true;
+
     if (!resumingRebase && !(await cleanWorktree(pi, review.worktree))) {
       phases.set(review.key, "blocked");
       updateUi(ctx);
@@ -448,27 +502,32 @@ export default function shepherd(pi: ExtensionAPI): void {
     }
 
     const baseline = await worktreeFingerprint(pi, review.worktree);
+
     const id = await spawnAgent(
       "general-purpose",
       review,
       `Tend ${displayKey(review)}`,
       workerPrompt(review, instructions),
     );
+
     activeRuns.set(id, { kind: "worker", reviewKey: review.key, baseline });
     phases.set(review.key, "working");
     reviewedFingerprints.delete(review.key);
     updateUi(ctx);
+
     return id;
   }
 
   async function spawnAdversarialReviews(ctx: ExtensionContext, review: Review): Promise<void> {
     const fingerprint = await worktreeFingerprint(pi, review.worktree);
+
     const cycle: ReviewCycle = {
       pending: new Set(),
       failed: false,
       fingerprint,
       results: [],
     };
+
     reviewCycles.set(review.key, cycle);
     phases.set(review.key, "reviewing");
     updateUi(ctx);
@@ -487,6 +546,7 @@ export default function shepherd(pi: ExtensionAPI): void {
         prompt: refactorPrompt(review),
       },
     ];
+
     const results = await Promise.allSettled(
       requests.map(async (request) => {
         const id = await spawnAgent(request.type, review, request.description, request.prompt);
@@ -501,10 +561,12 @@ export default function shepherd(pi: ExtensionAPI): void {
       updateUi(ctx);
       throw new Error(`Unable to start adversarial reviewers for ${displayKey(review)}`);
     }
+
     if (results.some((result) => result.status === "rejected")) {
       cycle.failed = true;
       ctx.ui.notify(`${displayKey(review)} started only one adversarial reviewer`, "warning");
     }
+
     updateUi(ctx);
   }
 
@@ -512,25 +574,31 @@ export default function shepherd(pi: ExtensionAPI): void {
     const value = data as { id?: string; result?: string; error?: string } | undefined;
     const id = value?.id;
     const ctx = currentCtx;
+
     if (!id || !ctx) {
       return;
     }
 
     const run = activeRuns.get(id);
+
     if (!run) {
       return;
     }
+
     activeRuns.delete(id);
     agentPreviews.delete(id);
     const review = reviews.get(run.reviewKey);
+
     if (!review) {
       return;
     }
 
     if (run.kind === "worker") {
       const fingerprint = await worktreeFingerprint(pi, review.worktree);
+
       if (fingerprint !== run.baseline) {
         const blockedReason = await worktreeBlockedReason(pi, review.worktree);
+
         if (blockedReason) {
           phases.set(review.key, "blocked");
           reportToCoordinator(
@@ -539,12 +607,17 @@ export default function shepherd(pi: ExtensionAPI): void {
             [{ kind: "worker", result: value?.result ?? value?.error ?? "No output." }],
           );
           updateUi(ctx);
+
           return;
         }
+
         await spawnAdversarialReviews(ctx, review);
+
         return;
       }
+
       const loop = correctionLoops[review.key] ?? 0;
+
       if (failed || loop > 0) {
         phases.set(review.key, "blocked");
         reportToCoordinator(
@@ -557,26 +630,33 @@ export default function shepherd(pi: ExtensionAPI): void {
       } else {
         phases.set(review.key, "idle");
       }
+
       updateUi(ctx);
+
       return;
     }
 
     const cycle = reviewCycles.get(review.key);
+
     if (!cycle) {
       return;
     }
+
     cycle.pending.delete(id);
     cycle.failed ||= failed;
     cycle.results.push({
       kind: run.kind,
       result: value?.result ?? value?.error ?? "No output.",
     });
+
     if (cycle.pending.size > 0) {
       updateUi(ctx);
+
       return;
     }
 
     reviewCycles.delete(review.key);
+
     if (cycle.failed) {
       phases.set(review.key, "blocked");
       reportToCoordinator(
@@ -585,6 +665,7 @@ export default function shepherd(pi: ExtensionAPI): void {
         cycle.results,
       );
       updateUi(ctx);
+
       return;
     }
 
@@ -592,8 +673,10 @@ export default function shepherd(pi: ExtensionAPI): void {
     const refactoring = cycle.results.filter((result) => result.kind === "refactor");
     const correctnessFindings = correctness.filter((result) => hasMaterialFindings(result.result));
     const refactoringFindings = refactoring.filter((result) => hasMaterialFindings(result.result));
+
     if (correctnessFindings.length > 0) {
       const loop = correctionLoops[review.key] ?? 0;
+
       if (loop >= MAX_CORRECTION_LOOPS) {
         phases.set(review.key, "blocked");
         reportToCoordinator(
@@ -602,16 +685,19 @@ export default function shepherd(pi: ExtensionAPI): void {
           correctnessFindings,
         );
         updateUi(ctx);
+
         return;
       }
 
       correctionLoops[review.key] = loop + 1;
       persist();
       phases.set(review.key, "idle");
+
       const findings = correctnessFindings
         .map((result) => result.result)
         .join("\n\n")
         .slice(0, 8_000);
+
       try {
         await dispatchWorker(
           ctx,
@@ -631,12 +717,15 @@ export default function shepherd(pi: ExtensionAPI): void {
           [{ kind: "dispatch", result: String(error) }, ...correctnessFindings],
         );
       }
+
       updateUi(ctx);
+
       return;
     }
 
     phases.set(review.key, "reviewed");
     reviewedFingerprints.set(review.key, cycle.fingerprint);
+
     if (refactoringFindings.length > 0) {
       reportToCoordinator(
         review,
@@ -646,6 +735,7 @@ export default function shepherd(pi: ExtensionAPI): void {
     } else {
       ctx.ui.notify(`${displayKey(review)} adversarial review clean`, "info");
     }
+
     updateUi(ctx);
   }
 
@@ -656,12 +746,15 @@ export default function shepherd(pi: ExtensionAPI): void {
   async function retryReviewCi(ctx: ExtensionContext, review: Review): Promise<number> {
     await refresh(ctx);
     const currentReview = reviews.get(review.key);
+
     if (!currentReview) {
       throw new Error(`${displayKey(review)} is no longer open`);
     }
+
     review = currentReview;
 
     const head = await currentHead(pi, review.worktree);
+
     if (head !== review.headSha) {
       throw new Error(
         `${displayKey(review)} local HEAD does not match the review HEAD; refresh or push the branch before retrying CI`,
@@ -669,10 +762,13 @@ export default function shepherd(pi: ExtensionAPI): void {
     }
 
     const targets = await retryTargets(pi, review);
+
     const available = targets.filter((target) => {
       const key = retryAttemptKey(review, target);
+
       return (retryAttempts[key] ?? 0) < MAX_RETRY_ATTEMPTS;
     });
+
     if (available.length === 0) {
       throw new Error(`${displayKey(review)} has no retryable failed CI jobs`);
     }
@@ -680,44 +776,54 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (!ctx.hasUI) {
       throw new Error("Shepherd CI retry requires interactive confirmation");
     }
+
     const confirmed = await ctx.ui.confirm(
       `Retry CI for ${displayKey(review)}?`,
       available
         .map((target) => {
           const key = retryAttemptKey(review, target);
+
           return `${target.name} (${target.status}, attempt ${(retryAttempts[key] ?? 0) + 1}/${MAX_RETRY_ATTEMPTS})`;
         })
         .join("\n"),
     );
+
     if (!confirmed) {
       return 0;
     }
 
     let retried = 0;
+
     for (const target of available) {
       const key = retryAttemptKey(review, target);
       await retryCiTarget(pi, review, target);
       retryAttempts[key] = (retryAttempts[key] ?? 0) + 1;
       retried += 1;
     }
+
     persist();
     review.status = "waiting";
     review.summary = `CI retry submitted for ${retried} job${retried === 1 ? "" : "s"}`;
     updateUi(ctx);
+
     return retried;
   }
 
   async function start(ctx: ExtensionCommandContext): Promise<void> {
     await refresh(ctx, true);
     const candidates = [...reviews.values()];
+
     if (candidates.length === 0) {
       ctx.ui.notify("No open reviews with Shirei worktrees were found", "warning");
+
       return;
     }
 
     const chosen = await selectReviews(ctx, candidates, selected);
+
     if (!chosen || chosen.size === 0) {
       ctx.ui.notify("Shepherd start cancelled: no reviews selected", "info");
+
       return;
     }
 
@@ -732,14 +838,18 @@ export default function shepherd(pi: ExtensionAPI): void {
   async function selectFlock(ctx: ExtensionCommandContext): Promise<void> {
     await refresh(ctx, true);
     const chosen = await selectReviews(ctx, [...reviews.values()], selected);
+
     if (!chosen) {
       return;
     }
+
     selected = chosen;
+
     if (selected.size === 0) {
       active = false;
       stopPolling();
     }
+
     persist();
     updateUi(ctx);
   }
@@ -756,10 +866,13 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (!active) {
       return "Shepherd is stopped.";
     }
+
     const flock = selectedReviews();
+
     if (flock.length === 0) {
       return "Shepherd is active, but none of its selected reviews are currently available.";
     }
+
     return flock
       .map((review) => `${review.key}: ${phaseSummary(review)}`)
       .join("\n");
@@ -771,13 +884,17 @@ export default function shepherd(pi: ExtensionAPI): void {
     title: string,
   ): Promise<Review | undefined> {
     const resolved = resolveReview(value);
+
     if (resolved) {
       return resolved;
     }
+
     if (value.trim()) {
       ctx.ui.notify(`Selected review not found: ${value.trim()}`, "warning");
+
       return undefined;
     }
+
     return chooseReview(ctx, selectedReviews(), title);
   }
 
@@ -793,17 +910,22 @@ export default function shepherd(pi: ExtensionAPI): void {
         { value: "retry", label: "retry", description: "Retry failed CI for a selected review" },
         { value: "stop", label: "stop", description: "Stop monitoring" },
       ];
+
       const normalized = prefix.trimStart();
       const separator = normalized.indexOf(" ");
+
       if (separator < 0) {
         const matches = commands.filter((command) => command.value.startsWith(normalized));
+
         return matches.length > 0 ? matches : null;
       }
 
       const action = normalized.slice(0, separator);
+
       if (action !== "dispatch" && action !== "retry") {
         return null;
       }
+
       const matches = selectedReviews()
         .map((review) => ({
           value: `${action} ${review.key}`,
@@ -811,50 +933,70 @@ export default function shepherd(pi: ExtensionAPI): void {
           description: `${review.title} · ${phaseSummary(review)}`,
         }))
         .filter((item) => item.value.startsWith(normalized));
+
       return matches.length > 0 ? matches : null;
     },
     handler: async (args, ctx) => {
       const [action = active ? "status" : "start", ...rest] = args.trim().split(/\s+/).filter(Boolean);
+
       if (action === "start") {
         await start(ctx);
+
         return;
       }
+
       if (action === "select") {
         await selectFlock(ctx);
+
         return;
       }
+
       if (action === "stop") {
         stop(ctx);
+
         return;
       }
+
       if (action === "status") {
         ctx.ui.notify(statusText(), "info");
+
         return;
       }
+
       if (action === "refresh") {
         await refresh(ctx, true);
         ctx.ui.notify("Shepherd refreshed", "info");
+
         return;
       }
+
       if (action === "dispatch") {
         const review = await commandReview(ctx, rest[0] ?? "", "Dispatch Shepherd worker");
+
         if (!review) {
           return;
         }
+
         const instructions = rest.slice(1).join(" ");
         const id = await dispatchWorker(ctx, review, instructions);
         ctx.ui.notify(`Started Shepherd worker ${id} for ${displayKey(review)}`, "info");
+
         return;
       }
+
       if (action === "retry") {
         const review = await commandReview(ctx, rest.join(" "), "Retry CI for review");
+
         if (!review) {
           return;
         }
+
         const count = await retryReviewCi(ctx, review);
+
         if (count > 0) {
           ctx.ui.notify(`Retried ${count} CI job${count === 1 ? "" : "s"}`, "info");
         }
+
         return;
       }
 
@@ -893,10 +1035,13 @@ export default function shepherd(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const review = resolveReview(params.review);
+
       if (!active || !review) {
         throw new Error(`Shepherd review is not active or selected: ${params.review}`);
       }
+
       const id = await dispatchWorker(ctx, review, params.instructions);
+
       return {
         content: [{ type: "text" as const, text: `Started worker ${id} for ${review.key}.` }],
         details: { review: review.key, agentId: id },
@@ -917,10 +1062,13 @@ export default function shepherd(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const review = resolveReview(params.review);
+
       if (!active || !review) {
         throw new Error(`Shepherd review is not active or selected: ${params.review}`);
       }
+
       const count = await retryReviewCi(ctx, review);
+
       return {
         content: [{ type: "text" as const, text: count > 0 ? `Retried ${count} CI job(s).` : "CI retry cancelled." }],
         details: { review: review.key, retried: count },
@@ -933,6 +1081,7 @@ export default function shepherd(pi: ExtensionAPI): void {
       currentCtx?.ui.notify(`Shepherd completion handling failed: ${String(error)}`, "error");
     });
   });
+
   const unsubscribeFailed = pi.events.on("subagents:failed", (data) => {
     void handleRunFinished(data, true).catch((error) => {
       currentCtx?.ui.notify(`Shepherd failure handling failed: ${String(error)}`, "error");
@@ -942,12 +1091,14 @@ export default function shepherd(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     currentCtx = ctx;
     restore(ctx);
+
     if (active) {
       startPolling(ctx);
       void refresh(ctx).catch((error) => {
         ctx.ui.notify(`Unable to restore Shepherd: ${String(error)}`, "warning");
       });
     }
+
     updateUi(ctx);
   });
 

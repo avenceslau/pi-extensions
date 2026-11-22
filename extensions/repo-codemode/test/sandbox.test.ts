@@ -21,6 +21,7 @@ test("executes async repository orchestration and returns only the final value",
 		service(),
 		new Set(),
 	);
+
 	assert.equal(result.text, '{"repo":"alpha","hit":"src/index.ts"}');
 	assert.equal(result.details.calls, 2);
 });
@@ -31,6 +32,7 @@ test("does not expose ambient Node, filesystem, network, or dynamic-code capabil
 		service(),
 		new Set(),
 	);
+
 	assert.deepEqual(JSON.parse(result.text), {
 		process: "undefined",
 		require: "undefined",
@@ -79,6 +81,7 @@ test("guest console calls do not serialize values into the host", async () => {
 		service(),
 		new Set(),
 	);
+
 	assert.equal(result.text, "ok");
 	assert.equal("logs" in result.details, false);
 });
@@ -99,13 +102,16 @@ test("serializes parallel guest calls before invoking host operations", async ()
 		maxActive = Math.max(maxActive, active);
 		await new Promise((resolve) => setTimeout(resolve, 5));
 		active -= 1;
+
 		return [{ id: "alpha" }];
 	};
+
 	const result = await executeRepoCode(
 		"const values = await Promise.all(Array.from({ length: 8 }, () => repo.list())); return values.length;",
 		mock as unknown as RepoService,
 		new Set(),
 	);
+
 	assert.equal(result.text, "8");
 	assert.equal(maxActive, 1);
 });
@@ -114,16 +120,19 @@ test("persists only remote projects newly discovered by an execution", async () 
 	const mock = service() as unknown as {
 		search: () => Promise<{ local: never[]; remote: Array<{ project: string; paths: never[] }>; remoteAttempted: boolean }>;
 	};
+
 	mock.search = async () => ({
 		local: [],
 		remote: [{ project: "https://github.example.test/group/new-project", paths: [] }],
 		remoteAttempted: true,
 	});
+
 	const result = await executeRepoCode(
 		"await repo.search('new-project', true); return 'done';",
 		mock as unknown as RepoService,
 		new Set(["https://github.example.test/group/already-known"]),
 	);
+
 	assert.deepEqual(result.details.remoteProjects, ["https://github.example.test/group/new-project"]);
 });
 
@@ -135,11 +144,13 @@ test("truncates large results before they enter host context", async () => {
 
 test("bounds guest-thrown error messages", async () => {
 	let error: unknown;
+
 	try {
 		await executeRepoCode("throw new Error('x'.repeat(1000000));", service(), new Set());
 	} catch (caught) {
 		error = caught;
 	}
+
 	assert.ok(error instanceof Error);
 	assert.ok(Buffer.byteLength(error.message) < 5000);
 });
@@ -150,8 +161,10 @@ test("does not let unawaited repository operations outlive execution", async () 
 	mock.list = async () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		finished = true;
+
 		return [{ id: "alpha" }];
 	};
+
 	await assert.rejects(
 		executeRepoCode("repo.list(); return 'early';", mock as unknown as RepoService, new Set()),
 		/await every repo call/,

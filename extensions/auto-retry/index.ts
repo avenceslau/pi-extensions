@@ -81,7 +81,9 @@ export function failoverChain(models: ModelsConfig | undefined, isSubagent: bool
   if (!isSubagent) {
     return modelChainFromEnv(process.env.PI_FAILOVER_MODELS) ?? models?.primary ?? [];
   }
+
   const chain = modelChainFromEnv(process.env.PI_SUBAGENT_FAILOVER_MODELS) ?? models?.subagent ?? [];
+
   return chain.filter((modelRef) => !isForbiddenForSubagents(models, modelRef));
 }
 
@@ -106,6 +108,7 @@ export function failoverCandidates(
 ): string[] {
   const currentIndex = currentModelRef === undefined ? -1 : chain.indexOf(currentModelRef);
   const rotated = [...chain.slice(currentIndex + 1), ...chain.slice(0, currentIndex + 1)];
+
   return rotated.filter((modelRef) => modelRef !== currentModelRef && !isUnavailable(modelRef));
 }
 
@@ -116,6 +119,7 @@ export function retryDelayMs(attempt: number): number {
 function unavailableSince(): Map<string, number> {
   const store = globalThis as typeof globalThis & { [UNAVAILABLE_SINCE_KEY]?: Map<string, number> };
   store[UNAVAILABLE_SINCE_KEY] ??= new Map();
+
   return store[UNAVAILABLE_SINCE_KEY];
 }
 
@@ -125,6 +129,7 @@ function markUnavailable(providerOrModelRef: string): void {
 
 function isMarkedUnavailable(providerOrModelRef: string): boolean {
   const markedAt = unavailableSince().get(providerOrModelRef);
+
   return markedAt !== undefined && Date.now() - markedAt < UNAVAILABLE_TTL_MS;
 }
 
@@ -138,6 +143,7 @@ function modelRefOf(model: { provider: string; id: string } | undefined): string
 
 function shortError(errorMessage: string): string {
   const firstLine = errorMessage.split("\n")[0].trim();
+
   return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine;
 }
 
@@ -175,13 +181,16 @@ export default function (pi: ExtensionAPI) {
         cancelRetryWait = undefined;
         resolve(elapsed);
       };
+
       const timer = setTimeout(() => finish(true), delayMs);
+
       const inputPoll = setInterval(() => {
         if (ctx.hasPendingMessages()) {
           ctx.ui.notify("Cancelled pending auto-retry (new user message).", "info");
           finish(false);
         }
       }, PENDING_INPUT_POLL_MS);
+
       cancelRetryWait = () => finish(false);
     });
   };
@@ -197,6 +206,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const model = ctx.modelRegistry.find(providerOf(modelRef), modelIdOf(modelRef));
+
       if (!model) {
         continue;
       }
@@ -234,6 +244,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     lastAssistantMessage = event.message;
+
     if (
       event.message.stopReason === "error" ||
       !state
@@ -245,6 +256,7 @@ export default function (pi: ExtensionAPI) {
       const attempts = state.attempt;
       ctx.ui.notify(`Recovered after ${attempts} retr${attempts === 1 ? "y" : "ies"}.`, "info");
     }
+
     reset(ctx);
   });
 
@@ -254,17 +266,20 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_before_settle", async (event, ctx) => {
     const failed = lastAssistantMessage;
     lastAssistantMessage = undefined;
+
     if (failed?.stopReason !== "error") {
       return;
     }
 
     const errorMessage = failed.errorMessage ?? "unknown error";
     const kind = classifyFailure(failed, ctx.model?.contextWindow, modelUnavailablePattern(loadConfig(pi).models));
+
     if (kind === "fatal") {
       if (state) {
         ctx.ui.notify(`Stopping auto-retry: error is not transient (${errorMessage}).`, "error");
         reset(ctx);
       }
+
       return;
     }
 
@@ -277,22 +292,26 @@ export default function (pi: ExtensionAPI) {
 
     const failedModelRef = modelRefOf(ctx.model);
     const failedProvider = ctx.model?.provider;
+
     switch (kind) {
       case "provider-unavailable":
         if (failedProvider) {
           markUnavailable(failedProvider);
         }
+
         break;
       case "model-unavailable":
         if (failedModelRef) {
           markUnavailable(failedModelRef);
         }
+
         break;
       case "transient":
         if (state.transientFailureProvider !== failedProvider) {
           state.transientFailureProvider = failedProvider;
           state.transientFailureCount = 0;
         }
+
         state.transientFailureCount += 1;
         break;
     }
@@ -300,8 +319,10 @@ export default function (pi: ExtensionAPI) {
     const shouldFailOver =
       kind !== "transient" ||
       state.transientFailureCount >= TRANSIENT_FAILURES_BEFORE_FAILOVER;
+
     if (shouldFailOver) {
       const model = await switchToHealthyModel(ctx);
+
       if (model) {
         ctx.ui.notify(
           `${failedModelRef ?? "The current model"} failed (${shortError(errorMessage)}); switched to ${model.provider}/${model.id}.`,
@@ -309,6 +330,7 @@ export default function (pi: ExtensionAPI) {
         );
         state.transientFailureProvider = undefined;
         state.transientFailureCount = 0;
+
         return retryInSameRun(event.entries);
       }
     }
@@ -319,6 +341,7 @@ export default function (pi: ExtensionAPI) {
         "error",
       );
       reset(ctx);
+
       return;
     }
 
@@ -337,13 +360,16 @@ export default function (pi: ExtensionAPI) {
     ]);
 
     const elapsed = await waitBeforeRetry(delayMs, ctx);
+
     if (!elapsed) {
       reset(ctx);
+
       return;
     }
 
     ctx.ui.setStatus(STATUS_KEY, `↻ retrying… (#${state.attempt})`);
     ctx.ui.setWidget(WIDGET_KEY, undefined);
+
     return retryInSameRun(event.entries);
   });
 
@@ -351,6 +377,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("context", async (event, ctx) => {
     const contextWindow = ctx.model?.contextWindow;
     const modelUnavailable = modelUnavailablePattern(loadConfig(pi).models);
+
     const messages = event.messages.filter((message) => {
       if (
         message.role === "custom" &&
@@ -365,6 +392,7 @@ export default function (pi: ExtensionAPI) {
 
       return true;
     });
+
     return { messages };
   });
 
@@ -382,6 +410,7 @@ export default function (pi: ExtensionAPI) {
 
       ctx.ui.notify("Auto-retry cancelled.", "info");
       cancelRetryWait();
+
       return { consume: true };
     });
   });

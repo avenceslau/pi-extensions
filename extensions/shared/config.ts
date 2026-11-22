@@ -52,8 +52,10 @@ const PiExtensionsConfigSchema = Type.Object({
 });
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
 // Fails to compile when the schema and the hand-written types drift apart.
 const schemaMatchesTypes: Equal<Static<typeof PiExtensionsConfigSchema>, PiExtensionsConfig> = true;
+
 void schemaMatchesTypes;
 
 export function isForbiddenForSubagents(models: ModelsConfig | undefined, modelRef: string): boolean {
@@ -66,6 +68,7 @@ export function modelChainFromEnv(value: string | undefined): string[] | undefin
     .split(",")
     .map((modelRef) => modelRef.trim())
     .filter((modelRef) => modelRef.includes("/"));
+
   return chain.length > 0 ? chain : undefined;
 }
 
@@ -94,6 +97,7 @@ export function parseConfig(value: unknown, source: string): PiExtensionsConfig 
     const problem = [...Value.Errors(PiExtensionsConfigSchema, value)][0];
     throw new Error(`Invalid config from ${source}: ${problem?.instancePath || "/"} ${problem?.message ?? ""}`.trim());
   }
+
   return value;
 }
 
@@ -101,21 +105,26 @@ export function parseConfig(value: unknown, source: string): PiExtensionsConfig 
 // modification time in the URL makes an edited file load fresh.
 export async function readUserConfig(path = userConfigPath()): Promise<PiExtensionsConfig> {
   let modifiedAt: number;
+
   try {
     modifiedAt = (await stat(path)).mtimeMs;
   } catch (error) {
     if (isMissingFile(error)) {
       return {};
     }
+
     throw error;
   }
+
   const module: { default?: unknown } = await import(`${pathToFileURL(path).href}?modified=${modifiedAt}`);
+
   return parseConfig(module.default, path);
 }
 
 // Another copy of this module, such as an older one in a session started before an update, may have stored it.
 function cachedUserConfig(): PiExtensionsConfig {
   const cached: unknown = Reflect.get(globalThis, USER_CONFIG_KEY);
+
   return Value.Check(PiExtensionsConfigSchema, cached) ? cached : {};
 }
 
@@ -156,9 +165,12 @@ export function mergeConfig(base: PiExtensionsConfig, override: PiExtensionsConf
 // copy extensions/user-config/index.ts read at the last session start or /reload.
 export function loadConfig(pi: Pick<ExtensionAPI, "events">): PiExtensionsConfig {
   const contributed: PiExtensionsConfig[] = [];
+
   const request: ConfigRequest = {
     contribute: (config) => contributed.push(parseConfig(config, "a package")),
   };
+
   pi.events.emit(CONFIG_CHANNEL, request);
+
   return [...contributed, cachedUserConfig()].reduce(mergeConfig, {});
 }

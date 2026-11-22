@@ -4,8 +4,10 @@ import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 const CACHE_PATH = join(homedir(), ".cache", "pi-hygiene", "clef.sqlite");
+
 // Several pi sessions may write at once.
 const BUSY_TIMEOUT_MS = 5_000;
+
 const TABLES = {
   answers: {
     column: "probability",
@@ -27,11 +29,13 @@ export interface KeyValueCache<Value> {
 
 // Clef probabilities by question key. A cached answer also keeps the verdict on unchanged code stable across audits.
 export type AnswerCache = KeyValueCache<number>;
+
 // comment-review verdicts as JSON, by a hash of the comment, the code around it and the prompt version.
 export type VerdictCache = KeyValueCache<string>;
 
 function memoryCache<Value>(): KeyValueCache<Value> {
   const values = new Map<string, Value>();
+
   return {
     get: (key) => values.get(key),
     set: (entries) => {
@@ -52,21 +56,26 @@ function sqliteCache<Value extends number | string>(database: DatabaseSync, tabl
   );
   const select = database.prepare(`SELECT ${column} AS value FROM ${table} WHERE key = ?`);
   const insert = database.prepare(`INSERT OR REPLACE INTO ${table} (key, ${column}, created) VALUES (?, ?, ?)`);
+
   return {
     get: (key) => {
       const value = select.get(key)?.value;
+
       return typeof value === "number" || typeof value === "string" ? (value as Value) : undefined;
     },
     set: (entries) => {
       if (entries.length === 0) {
         return;
       }
+
       const now = Date.now();
       database.exec("BEGIN");
+
       try {
         for (const [key, value] of entries) {
           insert.run(key, value, now);
         }
+
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
@@ -82,6 +91,7 @@ async function openCache<Value extends number | string>(table: Table): Promise<{
   try {
     const { DatabaseSync } = await import("node:sqlite");
     mkdirSync(dirname(CACHE_PATH), { recursive: true });
+
     return { cache: sqliteCache<Value>(new DatabaseSync(CACHE_PATH), table) };
   } catch (error) {
     return {

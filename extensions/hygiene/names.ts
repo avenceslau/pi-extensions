@@ -51,8 +51,10 @@ const PLACEHOLDER_WORDS = new Set([
   "y",
   "z",
 ]);
+
 // Words that add nothing to a placeholder: `myData`, `newValue` and `doStuff` are as empty as `data`.
 const FILLER_WORDS = new Set(["the", "an", "my", "new", "old", "some", "other", "do", "get", "set"]);
+
 const QUANTITY_WORDS = new Set([
   "age",
   "backoff",
@@ -79,6 +81,7 @@ const QUANTITY_WORDS = new Set([
   "wait",
   "window",
 ]);
+
 const UNIT_WORDS = new Set([
   "attempts",
   "bits",
@@ -131,6 +134,7 @@ const UNIT_WORDS = new Set([
   "week",
   "weeks",
 ]);
+
 const PREDICATE_PREFIXES = new Set([
   "allows",
   "can",
@@ -157,6 +161,7 @@ const PREDICATE_PREFIXES = new Set([
   "will",
   "would",
 ]);
+
 const ADJECTIVES = new Set([
   "absent",
   "active",
@@ -201,11 +206,14 @@ const ADJECTIVES = new Set([
   "valid",
   "verbose",
 ]);
+
 const ADJECTIVE_SUFFIX = /(?:ed|able|ible|ive|ing|ful|less|ous)$/;
 const PLURAL = /[^su]s$/;
+
 // Shorter words that end like plurals or adjectives, such as "bus" or "feed", rarely are.
 const MIN_PLURAL_CHARS = 4;
 const MIN_SUFFIXED_ADJECTIVE_CHARS = 5;
+
 // Names this short belong to short-name.
 export const SHORT_NAME_MAX_CHARS = 2;
 
@@ -222,6 +230,7 @@ export function nameWords(name: string): string[] {
 export function isPlaceholderName(name: string): boolean {
   const words = nameWords(name);
   const core = words.filter((word) => !FILLER_WORDS.has(word));
+
   return core.length > 0 && core.every((word) => PLACEHOLDER_WORDS.has(word));
 }
 
@@ -232,6 +241,7 @@ function hasUnit(words: string[]): boolean {
 function readsAsPredicate(words: string[]): boolean {
   const first = words[0] ?? "";
   const last = words.at(-1) ?? "";
+
   return (
     PREDICATE_PREFIXES.has(first) ||
     [first, last].some((word) => ADJECTIVES.has(word) || (word.length >= MIN_SUFFIXED_ADJECTIVE_CHARS && ADJECTIVE_SUFFIX.test(word)))
@@ -242,25 +252,32 @@ function readsAsPredicate(words: string[]): boolean {
 export function genericNameProblem(identifier: Identifier): string | undefined {
   const { name } = identifier;
   const words = nameWords(name);
+
   if (isPlaceholderName(name) && !identifier.holdsAnyValue) {
     return `\`${name}\` is a placeholder that says nothing about what it holds or does.`;
   }
+
   const quantity = words.some((word) => QUANTITY_WORDS.has(word));
   const constant = identifier.constant || identifier.kind === "const" || /^[A-Z][A-Z0-9_]+$/.test(name);
+
   if (constant && identifier.valueType === "number" && quantity && !hasUnit(words)) {
     return `\`${name}\` holds a time, size or count but its name has no unit.`;
   }
+
   if (identifier.valueType === "boolean" && !readsAsPredicate(words)) {
     return `\`${name}\` holds a boolean but does not read as a yes-or-no question.`;
   }
+
   return undefined;
 }
 
 // A name the initializer suggests, unless it is itself a placeholder or the current name.
 export function usefulSuggestion(identifier: Identifier): string | undefined {
   const { suggestion } = identifier;
+
   if (!suggestion || suggestion === identifier.name || isPlaceholderName(suggestion)) {
     return undefined;
   }
+
   return suggestion;
 }

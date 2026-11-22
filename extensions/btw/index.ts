@@ -66,6 +66,7 @@ export default function (pi: ExtensionAPI) {
 
   async function processInbox(ctx: ExtensionContext): Promise<void> {
     processAgain = true;
+
     if (processingInbox) {
       return;
     }
@@ -73,11 +74,13 @@ export default function (pi: ExtensionAPI) {
     const generation = sessionGeneration;
     const sessionId = currentSessionId;
     const paneId = HERDR_PANE_ID;
+
     if (!sessionActive || !sessionId || !paneId) {
       return;
     }
 
     processingInbox = true;
+
     try {
       while (
         processAgain &&
@@ -86,6 +89,7 @@ export default function (pi: ExtensionAPI) {
         sessionId === currentSessionId
       ) {
         processAgain = false;
+
         if (!ctx.isIdle()) {
           return;
         }
@@ -96,9 +100,11 @@ export default function (pi: ExtensionAPI) {
           encodeURIComponent(paneId),
           encodeURIComponent(sessionId),
         );
+
         const files = (await readdir(inbox))
           .filter((file) => file.endsWith(".json"))
           .sort();
+
         if (
           !sessionActive ||
           generation !== sessionGeneration ||
@@ -115,12 +121,15 @@ export default function (pi: ExtensionAPI) {
             !ctx.isIdle()
           ) {
             processAgain = true;
+
             return;
           }
 
           const path = join(inbox, file);
+
           try {
             const rawPayload = await readFile(path, "utf8");
+
             if (
               !sessionActive ||
               generation !== sessionGeneration ||
@@ -128,16 +137,19 @@ export default function (pi: ExtensionAPI) {
             ) {
               return;
             }
+
             if (Buffer.byteLength(rawPayload, "utf8") > 1_000_000) {
               throw new Error("payload is too large");
             }
 
             const value: unknown = JSON.parse(rawPayload);
+
             if (!value || typeof value !== "object") {
               throw new Error("payload has an invalid shape");
             }
 
             const candidate = value as Partial<MergePayload>;
+
             if (
               typeof candidate.id !== "string" ||
               typeof candidate.createdAt !== "number" ||
@@ -157,12 +169,14 @@ export default function (pi: ExtensionAPI) {
             }
 
             const payload = candidate as MergePayload;
+
             if (
               payload.targetPaneId !== paneId ||
               payload.targetSessionId !== sessionId
             ) {
               throw new Error("payload targets a different session");
             }
+
             if (
               !sessionActive ||
               generation !== sessionGeneration ||
@@ -171,6 +185,7 @@ export default function (pi: ExtensionAPI) {
               !ctx.isIdle()
             ) {
               processAgain = true;
+
               return;
             }
 
@@ -206,6 +221,7 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.notify(`Could not process BTW merge: ${message}`, "error");
     } finally {
       processingInbox = false;
+
       if (
         processAgain &&
         sessionActive &&
@@ -228,8 +244,10 @@ export default function (pi: ExtensionAPI) {
       if (entry.type !== "custom" || typeof entry.data !== "object" || !entry.data) {
         continue;
       }
+
       if (entry.customType === "btw-child") {
         const data = entry.data as Partial<ChildState>;
+
         if (
           data.childSessionId === currentSessionId &&
           typeof data.parentSessionId === "string"
@@ -237,6 +255,7 @@ export default function (pi: ExtensionAPI) {
           childState = data as ChildState;
         }
       }
+
       if (
         entry.customType === "btw-merged" &&
         (entry.data as { childSessionId?: unknown }).childSessionId === currentSessionId
@@ -267,12 +286,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     sessionActive = true;
+
     const inbox = join(
       getAgentDir(),
       "btw",
       encodeURIComponent(HERDR_PANE_ID),
       encodeURIComponent(currentSessionId),
     );
+
     await mkdir(inbox, { recursive: true, mode: 0o700 });
 
     inboxWatcher = watch(inbox, () => {
@@ -301,6 +322,7 @@ export default function (pi: ExtensionAPI) {
     currentSessionId = undefined;
     inboxWatcher?.close();
     inboxWatcher = undefined;
+
     if (rescanTimer) {
       clearInterval(rescanTimer);
       rescanTimer = undefined;
@@ -311,37 +333,48 @@ export default function (pi: ExtensionAPI) {
     description: "Ask a side question in a new right-hand Herdr pane",
     handler: async (args, ctx) => {
       const question = args.trim();
+
       if (!question) {
         ctx.ui.notify("Usage: /btw <question>", "warning");
+
         return;
       }
+
       if (question.includes("\0")) {
         ctx.ui.notify("BTW questions cannot contain null bytes", "error");
+
         return;
       }
+
       if (
         ctx.mode !== "tui" ||
         HERDR_ENV !== "1" ||
         !HERDR_PANE_ID
       ) {
         ctx.ui.notify("/btw requires Pi to be running inside Herdr", "error");
+
         return;
       }
 
       const parentSessionPath = ctx.sessionManager.getSessionFile();
+
       if (!parentSessionPath) {
         ctx.ui.notify("/btw requires a persisted parent session", "error");
+
         return;
       }
 
       // The side session runs on the configured model, or on the parent's.
       const model = loadConfig(pi).models?.extensions?.btw ?? (ctx.model && `${ctx.model.provider}/${ctx.model.id}`);
+
       if (!model) {
         ctx.ui.notify("/btw needs a model: select one, or set models.extensions.btw in ~/.pi/agent/pi-extensions.ts", "error");
+
         return;
       }
 
       const title = question.replace(/\s+/g, " ").slice(0, 48);
+
       const env = {
         BTW_PARENT_AGENT_DIR: getAgentDir(),
         BTW_PARENT_PANE_ID: HERDR_PANE_ID,
@@ -353,6 +386,7 @@ export default function (pi: ExtensionAPI) {
         BTW_MODEL: model,
         BTW_THINKING: pi.getThinkingLevel(),
       };
+
       const createArgs = [
         "pane",
         "split",
@@ -365,28 +399,36 @@ export default function (pi: ExtensionAPI) {
         "--cwd",
         ctx.cwd,
       ];
+
       for (const [name, value] of Object.entries(env)) {
         createArgs.push("--env", `${name}=${value}`);
       }
+
       createArgs.push("--no-focus");
 
       const created = await pi.exec("herdr", createArgs, { timeout: 5000 });
+
       if (created.code !== 0) {
         ctx.ui.notify(created.stderr.trim() || "Could not create BTW pane", "error");
+
         return;
       }
 
       let response: PaneSplitResponse;
+
       try {
         response = JSON.parse(created.stdout) as PaneSplitResponse;
       } catch {
         ctx.ui.notify("Herdr returned an invalid pane-split response", "error");
+
         return;
       }
 
       const paneId = response.result?.pane?.pane_id;
+
       if (!paneId) {
         ctx.ui.notify("Herdr did not return the new BTW pane", "error");
+
         return;
       }
 
@@ -399,9 +441,11 @@ export default function (pi: ExtensionAPI) {
         '--thinking "$BTW_THINKING"',
         '"$BTW_QUESTION"',
       ].join(" ");
+
       const started = await pi.exec("herdr", ["pane", "run", paneId, childCommand], {
         timeout: 5000,
       });
+
       if (started.code !== 0 && !started.killed) {
         await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5000 });
         ctx.ui.notify(started.stderr.trim() || "Could not start BTW Pi session", "error");
@@ -424,28 +468,38 @@ export default function (pi: ExtensionAPI) {
         childState.parentSessionId !== BTW_PARENT_SESSION_ID
       ) {
         ctx.ui.notify("/merge is only available in a BTW child session", "error");
+
         return;
       }
+
       if (!ctx.isIdle()) {
         ctx.ui.notify("Wait for the BTW answer to finish before merging", "warning");
+
         return;
       }
+
       if (merged) {
         ctx.ui.notify("This BTW answer has already been merged", "warning");
+
         return;
       }
 
       let answer = args.trim();
+
       if (!answer) {
         const branch = ctx.sessionManager.getBranch();
+
         for (let index = branch.length - 1; index >= 0; index -= 1) {
           const entry = branch[index];
+
           if (entry.type !== "message") {
             continue;
           }
+
           if (entry.message.role === "user") {
             break;
           }
+
           if (
             entry.message.role !== "assistant" ||
             entry.message.stopReason !== "stop"
@@ -458,26 +512,32 @@ export default function (pi: ExtensionAPI) {
             .map((part) => part.text)
             .join("\n")
             .trim();
+
           if (answer) {
             break;
           }
         }
       }
+
       if (!answer) {
         ctx.ui.notify("No BTW answer found. Use /merge <text> to merge explicit text.", "error");
+
         return;
       }
 
       const id = randomUUID();
       const createdAt = Date.now();
+
       const inbox = join(
         BTW_PARENT_AGENT_DIR,
         "btw",
         encodeURIComponent(BTW_PARENT_PANE_ID),
         encodeURIComponent(BTW_PARENT_SESSION_ID),
       );
+
       const temporaryPath = join(inbox, `.${id}.tmp`);
       const finalPath = join(inbox, `${createdAt}-${id}.json`);
+
       const payload: MergePayload = {
         id,
         createdAt,
@@ -500,6 +560,7 @@ export default function (pi: ExtensionAPI) {
         await unlink(temporaryPath).catch(() => undefined);
         const message = error instanceof Error ? error.message : String(error);
         ctx.ui.notify(`Could not merge BTW answer: ${message}`, "error");
+
         return;
       }
 

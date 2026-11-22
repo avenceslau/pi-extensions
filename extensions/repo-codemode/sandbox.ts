@@ -29,44 +29,55 @@ function compact(value: unknown) {
 	if (typeof value === "string") {
 		return value;
 	}
+
 	const json = JSON.stringify(value);
+
 	return json === undefined ? String(value) : json;
 }
 
 function boundedError(error: unknown) {
 	const message = error instanceof Error ? error.message : String(error);
+
 	return message.slice(0, 4096);
 }
 
 function truncate(text: string, alreadyTruncated = false) {
 	let end = text.length;
 	let lineCount = 1;
+
 	for (let i = 0; i < text.length; i += 1) {
 		if (text.charCodeAt(i) === 10 && ++lineCount > MAX_OUTPUT_LINES) {
 			end = i;
 			break;
 		}
 	}
+
 	let output = text.slice(0, end);
 	let truncated = alreadyTruncated || end < text.length;
+
 	if (Buffer.byteLength(output) > MAX_OUTPUT_BYTES) {
 		const characters = Array.from(output);
 		let low = 0;
 		let high = characters.length;
+
 		while (low < high) {
 			const middle = Math.ceil((low + high) / 2);
+
 			if (Buffer.byteLength(characters.slice(0, middle).join("")) <= MAX_OUTPUT_BYTES) {
 				low = middle;
 			} else {
 				high = middle - 1;
 			}
 		}
+
 		output = characters.slice(0, low).join("");
 		truncated = true;
 	}
+
 	if (truncated) {
 		output += "\n[repo_execute output truncated; return a smaller result or read fewer lines]";
 	}
+
 	return { text: output, truncated };
 }
 
@@ -87,6 +98,7 @@ export async function executeRepoCode(
 	if (!code || Buffer.byteLength(code) > MAX_CODE_BYTES || code.includes("\0")) {
 		throw new Error("Code must contain 1-20480 bytes and no NUL bytes");
 	}
+
 	if (signal?.aborted) {
 		throw new Error("Repository execution cancelled");
 	}
@@ -111,6 +123,7 @@ export async function executeRepoCode(
 		const onAbort = () => {
 			void finish(new Error("Repository execution cancelled"));
 		};
+
 		const timeout = setTimeout(() => {
 			void finish(new Error(`repo_execute timed out after ${EXECUTION_TIMEOUT_MS / 1000}s`));
 		}, EXECUTION_TIMEOUT_MS);
@@ -123,17 +136,22 @@ export async function executeRepoCode(
 					return service.info(args[0] as string, controller.signal);
 				case "search": {
 					const result = await service.search(args[0] as string, args[1] as boolean, controller.signal);
+
 					for (const match of result.remote) {
 						if (executionProjects.size >= MAX_REMOTE_PROJECTS) {
 							break;
 						}
+
 						executionProjects.add(match.project);
+
 						if (!initialProjects.has(match.project)) {
 							newProjects.add(match.project);
 						}
 					}
+
 					return result;
 				}
+
 				case "files":
 					return service.files(args[0] as string, optionalString(args[1]), controller.signal);
 				case "grep":
@@ -166,20 +184,26 @@ export async function executeRepoCode(
 			if (settled) {
 				return;
 			}
+
 			settled = true;
 			clearTimeout(timeout);
 			signal?.removeEventListener("abort", onAbort);
 			controller.abort();
 			await worker.terminate();
 			await queue;
+
 			if (error) {
 				reject(error);
+
 				return;
 			}
+
 			if (typeof result?.text !== "string") {
 				reject(new Error("repo_execute returned an invalid sandbox result"));
+
 				return;
 			}
+
 			const output = truncate(result.text, result.guestTruncated === true);
 			resolvePromise({
 				...output,
@@ -194,46 +218,61 @@ export async function executeRepoCode(
 
 		const handleCall = (message: WorkerCallMessage) => {
 			calls += 1;
+
 			if (calls > MAX_CALLS) {
 				worker.postMessage({ type: "callResult", id: message.id, error: `Repository API call limit exceeded (${MAX_CALLS})` });
+
 				return;
 			}
+
 			if (message.method === "search" && ++searchCalls > MAX_SEARCH_CALLS) {
 				worker.postMessage({
 					type: "callResult",
 					id: message.id,
 					error: `Repository search call limit exceeded (${MAX_SEARCH_CALLS})`,
 				});
+
 				return;
 			}
+
 			pendingCalls += 1;
+
 			const task = queue.then(async () => {
 				if (controller.signal.aborted) {
 					throw new Error("Repository execution cancelled or timed out");
 				}
+
 				const result = await dispatch(message.method, message.args);
 				hostBytes += Buffer.byteLength(compact(result));
+
 				if (hostBytes > MAX_HOST_BYTES) {
 					throw new Error("Repository API data budget exceeded; narrow the search or read fewer lines");
 				}
+
 				return result;
 			});
+
 			const tracked = task.then(
 				(result) => {
 					pendingCalls -= 1;
+
 					if (!settled) {
 						worker.postMessage({ type: "callResult", id: message.id, result });
 					}
+
 					return result;
 				},
 				(error) => {
 					pendingCalls -= 1;
+
 					if (!settled) {
 						worker.postMessage({ type: "callResult", id: message.id, error: boundedError(error) });
 					}
+
 					throw error;
 				},
 			);
+
 			queue = tracked.catch(() => undefined);
 		};
 
@@ -241,18 +280,25 @@ export async function executeRepoCode(
 			if (settled) {
 				return;
 			}
+
 			if (message.type === "call") {
 				handleCall(message);
+
 				return;
 			}
+
 			if (pendingCalls > 0) {
 				void finish(new Error("repo_execute returned before repository operations settled; await every repo call"));
+
 				return;
 			}
+
 			if (message.error) {
 				void finish(new Error(message.error.slice(0, 4096)));
+
 				return;
 			}
+
 			void finish(undefined, message.result);
 		});
 		worker.on("error", (error) => {

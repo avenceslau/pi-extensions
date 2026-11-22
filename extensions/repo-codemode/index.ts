@@ -11,8 +11,10 @@ function validProject(project: unknown): project is string {
 	if (typeof project !== "string" || project.length > 1000 || !project.startsWith("https://")) {
 		return false;
 	}
+
 	try {
 		const url = new URL(project);
+
 		return !url.username && !url.password && url.pathname.split("/").filter(Boolean).length >= 2;
 	} catch {
 		return false;
@@ -21,34 +23,45 @@ function validProject(project: unknown): project is string {
 
 function formatSearch(result: SearchResult) {
 	const lines: string[] = [];
+
 	if (result.local.length > 0) {
 		lines.push("local:");
+
 		for (const match of result.local) {
 			lines.push(`- ${match.id}`);
+
 			for (const path of match.paths) {
 				lines.push(`  ${path}`);
 			}
 		}
 	}
+
 	if (result.remote.length > 0) {
 		lines.push("remote:");
+
 		for (const match of result.remote) {
 			lines.push(`- ${match.project}`);
+
 			for (const path of match.paths) {
 				lines.push(`  ${path}`);
 			}
 		}
 	}
+
 	if (lines.length === 0) {
 		if (!result.remoteAttempted) {
 			return "No local repositories matched.";
 		}
+
 		if (!result.remoteHost || !result.remoteForge) {
 			return "No local repositories matched, and the current repository has no supported GitHub or GitLab origin.";
 		}
+
 		return `No local or ${result.remoteForge} repositories on ${result.remoteHost} matched.`;
 	}
+
 	lines.push("[Limited to 15 repositories and 3 matching paths per repository]");
+
 	return lines.join("\n");
 }
 
@@ -60,24 +73,30 @@ export default function repoCodemodeExtension(pi: ExtensionAPI) {
 		if (!Array.isArray(projects)) {
 			return;
 		}
+
 		for (const project of projects) {
 			if (allowedProjects.size >= 100) {
 				return;
 			}
+
 			if (validProject(project)) {
 				allowedProjects.add(project);
 			}
 		}
 	};
+
 	const restoreAllowedProjects = (ctx: ExtensionContext) => {
 		allowedProjects = new Set();
+
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type !== "message" || entry.message.role !== "toolResult") {
 				continue;
 			}
+
 			if (entry.message.toolName !== "repo_search" && entry.message.toolName !== "repo_execute") {
 				continue;
 			}
+
 			const details = entry.message.details as RepoToolDetails | undefined;
 			addAllowedProjects(details?.remoteProjects);
 		}
@@ -96,6 +115,7 @@ export default function repoCodemodeExtension(pi: ExtensionAPI) {
 			const result = await service.search(params.query, params.remote ?? false, signal);
 			const remoteProjects = result.remote.map((match) => match.project);
 			addAllowedProjects(remoteProjects);
+
 			return {
 				content: [{ type: "text", text: formatSearch(result) }],
 				details: { remoteProjects },
@@ -114,6 +134,7 @@ export default function repoCodemodeExtension(pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal) {
 			const result = await executeRepoCode(params.code, service, allowedProjects, signal);
 			addAllowedProjects(result.details.remoteProjects);
+
 			return {
 				content: [{ type: "text", text: result.text }],
 				details: result.details,

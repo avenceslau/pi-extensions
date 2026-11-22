@@ -117,9 +117,11 @@ const LINE_COMMENT_MARKER = /^(?:\/\/|#|--)/;
 // Runs of single-line comments on consecutive lines at the same column read as one comment.
 export function mergeLineComments(comments: Comment[]): Comment[] {
   const merged: Comment[] = [];
+
   for (const comment of comments) {
     const previous = merged.at(-1);
     const marker = LINE_COMMENT_MARKER.exec(comment.text)?.[0];
+
     if (
       previous &&
       marker &&
@@ -131,7 +133,9 @@ export function mergeLineComments(comments: Comment[]): Comment[] {
       previous.endLine = comment.line;
       continue;
     }
+
     merged.push({ ...comment });
   }
+
   return merged;
 }

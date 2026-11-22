@@ -16,6 +16,7 @@ test("reports the Pi lifecycle through Rex program status", async () => {
 	process.env.REX_BLOCK = "block:test";
 	process.stdout.write = ((chunk: string | Uint8Array) => {
 		output += chunk.toString();
+
 		return true;
 	}) as typeof process.stdout.write;
 
@@ -31,6 +32,7 @@ test("reports the Pi lifecycle through Rex program status", async () => {
 				await handler(event, context);
 			}
 		};
+
 		const idleContext = { mode: "tui", isIdle: () => true };
 
 		await emit("session_start", {}, idleContext);
@@ -67,11 +69,13 @@ test("reports the Pi lifecycle through Rex program status", async () => {
 		assert.match(output, /state=clear:id=pi/);
 	} finally {
 		process.stdout.write = previousWrite;
+
 		if (previousSession === undefined) {
 			delete process.env.REX_SESSION;
 		} else {
 			process.env.REX_SESSION = previousSession;
 		}
+
 		if (previousBlock === undefined) {
 			delete process.env.REX_BLOCK;
 		} else {

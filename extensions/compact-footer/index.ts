@@ -62,6 +62,7 @@ function sumSessionStats(ctx: ExtensionContext): SessionStats {
 		}
 
 		const isSummary = entry.type === "branch_summary" || entry.type === "compaction";
+
 		if (isSummary && entry.usage) {
 			add(entry.usage);
 			continue;
@@ -72,6 +73,7 @@ function sumSessionStats(ctx: ExtensionContext): SessionStats {
 		}
 
 		const message = entry.message;
+
 		if (message.role === "toolResult" && message.usage) {
 			add(message.usage);
 		}
@@ -95,6 +97,7 @@ function formatStats(stats: SessionStats): string {
 	] as const;
 
 	const parts: string[] = [];
+
 	for (const [prefix, count] of counts) {
 		if (count) {
 			parts.push(`${prefix}${formatTokens(count)}`);
@@ -102,6 +105,7 @@ function formatStats(stats: SessionStats): string {
 	}
 
 	const hasCacheUsage = stats.cacheRead > 0 || stats.cacheWrite > 0;
+
 	if (hasCacheUsage && stats.latestCacheHitRate !== undefined) {
 		parts.push(`CH${stats.latestCacheHitRate.toFixed(1)}%`);
 	}
@@ -122,11 +126,13 @@ function formatContext(
 	const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 	const suffix = `/${formatTokens(contextWindow)}${isAutoCompactEnabled ? " (auto)" : ""}`;
 	const percent = contextUsage?.percent ?? null;
+
 	if (percent === null) {
 		return theme.fg("dim", `?${suffix}`);
 	}
 
 	const text = `${percent.toFixed(1)}%${suffix}`;
+
 	if (percent > CONTEXT_ERROR_PERCENT) {
 		return theme.fg("error", text);
 	}
@@ -155,11 +161,13 @@ function formatPwd(ctx: ExtensionContext, footerData: ReadonlyFooterDataProvider
 
 function formatModel(pi: ExtensionAPI, ctx: ExtensionContext, providerCount: number): string {
 	const model = ctx.model;
+
 	if (!model) {
 		return "no-model";
 	}
 
 	let text = model.id;
+
 	if (model.reasoning) {
 		const thinkingLevel = pi.getThinkingLevel();
 		text += thinkingLevel === "off" ? " • thinking off" : ` • ${thinkingLevel}`;
@@ -186,6 +194,7 @@ export default function (pi: ExtensionAPI) {
 				invalidate() {},
 				render(width: number): string[] {
 					const leafId = ctx.sessionManager.getLeafId();
+
 					if (cachedStats?.leafId !== leafId) {
 						cachedStats = {
 							leafId,
@@ -194,13 +203,16 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					const usage = cachedStats.text ? `${cachedStats.text} ` : "";
+
 					const left =
 						theme.fg("dim", `${formatPwd(ctx, footerData)}  ${usage}`) +
 						formatContext(ctx, isAutoCompactEnabled, theme);
+
 					const leftWidth = visibleWidth(left);
 
 					const right = formatModel(pi, ctx, footerData.getAvailableProviderCount());
 					const rightWidth = Math.min(visibleWidth(right), width - leftWidth - MIN_GAP_COLUMNS);
+
 					const firstLine =
 						rightWidth > 0
 							? left +
@@ -211,6 +223,7 @@ export default function (pi: ExtensionAPI) {
 					const statuses = [...footerData.getExtensionStatuses().entries()]
 						.sort(([a], [b]) => a.localeCompare(b))
 						.map(([, text]) => text.replace(/\s+/g, " ").trim());
+
 					if (statuses.length === 0) {
 						return [firstLine];
 					}

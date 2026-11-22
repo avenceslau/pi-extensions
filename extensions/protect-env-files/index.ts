@@ -5,8 +5,10 @@ import { basename, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const GREP_EXCLUDE_GLOB = "!{.env,.env.*,.dev.vars,.dev.vars.*,**/.env,**/.env.*,**/.dev.vars,**/.dev.vars.*}";
+
 const MACOS_SANDBOX_DENY_RULES =
 	'(version 1)(allow default)(deny file-read* (regex #".*/[.]env([.][^/]*)?$"))(deny file-read* (regex #".*/[.]dev[.]vars([.][^/]*)?$"))';
+
 // Global only: a project-level allow list would let any repository unprotect its own secrets.
 const ALLOW_LIST_PATH = join(homedir(), ".pi", "agent", "env-file-guard.json");
 
@@ -19,8 +21,10 @@ function globToRegexSource(pattern: string): string {
 
 	const absolute = pattern.startsWith("~/") ? join(homedir(), pattern.slice(2)) : pattern;
 	let source = absolute.startsWith("/") ? "^" : "^.*/";
+
 	for (let i = 0; i < absolute.length; i++) {
 		const char = absolute[i];
+
 		if (absolute.startsWith("**/", i)) {
 			source += "(.*/)?";
 			i += 2;
@@ -37,34 +41,41 @@ function globToRegexSource(pattern: string): string {
 			source += `[${char}]`;
 		}
 	}
+
 	return `${source}$`;
 }
 
 async function loadAllowList(): Promise<string[]> {
 	let raw: string;
+
 	try {
 		raw = await readFile(ALLOW_LIST_PATH, "utf8");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 			return [];
 		}
+
 		throw error;
 	}
 
 	const allow = (JSON.parse(raw) as { allow?: unknown }).allow ?? [];
+
 	if (!Array.isArray(allow) || !allow.every((entry) => typeof entry === "string" && entry !== "")) {
 		throw new Error(`"allow" must be an array of non-empty strings`);
 	}
+
 	return allow.map(globToRegexSource);
 }
 
 function sandboxProfile(allowSources: string[]): string {
 	const allowRules = allowSources.map((source) => `(allow file-read* (regex #"${source}"))`).join("");
+
 	return `${MACOS_SANDBOX_DENY_RULES}${allowRules}(deny file-write* (literal "${ALLOW_LIST_PATH}"))`;
 }
 
 function isProtectedName(name: string): boolean {
 	const normalized = name.toLowerCase();
+
 	return (
 		normalized === ".env" ||
 		normalized.startsWith(".env.") ||
@@ -75,6 +86,7 @@ function isProtectedName(name: string): boolean {
 
 async function isProtectedPath(path: string, cwd: string): Promise<boolean> {
 	const normalizedPath = path.replace(/^@/, "");
+
 	if (normalizedPath.split(/[\\/]/).some(isProtectedName)) {
 		return true;
 	}
@@ -91,6 +103,7 @@ async function isProtectedPath(path: string, cwd: string): Promise<boolean> {
 async function isAllowedPath(path: string, cwd: string, allow: RegExp[]): Promise<boolean> {
 	const resolved = resolve(cwd, path.replace(/^@/, ""));
 	const matches = (candidate: string) => allow.some((pattern) => pattern.test(candidate));
+
 	if (!matches(resolved)) {
 		return false;
 	}
@@ -101,6 +114,7 @@ async function isAllowedPath(path: string, cwd: string, allow: RegExp[]): Promis
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 			return false;
 		}
+
 		// A dangling symlink would let a write create its protected target.
 		return lstat(resolved).then(
 			() => false,
@@ -135,19 +149,23 @@ export default function (pi: ExtensionAPI) {
 			allowSources = [];
 			notify(`Ignoring ${ALLOW_LIST_PATH}: ${(error as Error).message}`, "warning");
 		}
+
 		allowPatterns = allowSources.map((source) => new RegExp(source));
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
 		guardEnabled = pi.getFlag("no-env-file-guard") !== true;
+
 		const notify = (message: string, level: "info" | "warning") => {
 			if (ctx.hasUI) {
 				ctx.ui.notify(message, level);
 			}
 		};
+
 		if (!guardEnabled) {
 			notify("Environment-file guard disabled via --no-env-file-guard", "warning");
 		}
+
 		await reloadAllowList(notify);
 	});
 
@@ -155,22 +173,26 @@ export default function (pi: ExtensionAPI) {
 		description: "Enable, disable, reload the allow list, or show the environment-file guard",
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
+
 			if (action === "") {
 				ctx.ui.notify(
 					`Environment-file guard is ${guardEnabled ? "enabled" : "disabled"}; ${allowSources.length} allow pattern(s) from ${ALLOW_LIST_PATH}`,
 					"info",
 				);
+
 				return;
 			}
 
 			if (action === "reload") {
 				await reloadAllowList((message, level) => ctx.ui.notify(message, level));
 				ctx.ui.notify(`Loaded ${allowSources.length} allow pattern(s)`, "info");
+
 				return;
 			}
 
 			if (action !== "on" && action !== "off") {
 				ctx.ui.notify("Usage: /env-file-guard on|off|reload", "warning");
+
 				return;
 			}
 
@@ -189,6 +211,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (event.toolName === "read" || event.toolName === "edit" || event.toolName === "write") {
 			const path = event.input.path;
+
 			if (
 				event.toolName !== "read" &&
 				typeof path === "string" &&
@@ -210,6 +233,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (event.toolName === "grep") {
 			const path = typeof event.input.path === "string" ? event.input.path : ".";
+
 			if (await isBlockedPath(path, ctx.cwd, allowPatterns)) {
 				return {
 					block: true,

@@ -21,6 +21,7 @@ export async function git(root: string, args: string[], signal?: AbortSignal): P
     timeout: GIT_TIMEOUT_MS,
     signal,
   });
+
   return stdout;
 }
 
@@ -35,18 +36,22 @@ export async function repositoryRoot(dir: string, signal?: AbortSignal): Promise
 
 function sumCounts(output: string): number {
   let total = 0;
+
   for (const row of output.split("\n")) {
     total += Number(row.split(":").at(-1)) || 0;
   }
+
   return total;
 }
 
 export function sourceTree(root: string, ref?: string): SourceTree {
   const countWord = async (word: string) => {
     const args = ["grep", "-c", "-w", "-I", "-F", "-e", word];
+
     if (ref) {
       args.push(ref);
     }
+
     try {
       return sumCounts(await git(root, [...args, "--"]));
     } catch (error) {
@@ -56,6 +61,7 @@ export function sourceTree(root: string, ref?: string): SourceTree {
         error !== null &&
         "code" in error &&
         error.code === 1;
+
       return nothingMatched ? 0 : undefined;
     }
   };
@@ -67,12 +73,14 @@ export function sourceTree(root: string, ref?: string): SourceTree {
       countWord,
     };
   }
+
   return {
     read: (path) => git(root, ["show", `${ref}:${path}`]),
     listDir: async (dir) => {
       const prefix = dir === "." ? "" : `${dir}/`;
       const pathspec = prefix ? ["--", prefix] : [];
       const listing = await git(root, ["ls-tree", "--name-only", ref, ...pathspec]).catch(() => "");
+
       return listing
         .split("\n")
         .filter(Boolean)

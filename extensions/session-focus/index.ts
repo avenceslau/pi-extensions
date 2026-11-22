@@ -35,6 +35,7 @@ const LABEL_SYSTEM_PROMPT = [
 
 function describe(focus: SessionFocus): string {
 	const parts: string[] = [];
+
 	if (focus.feature) {
 		parts.push(`Working on ${focus.feature}`);
 	}
@@ -56,6 +57,7 @@ function isSessionFocus(value: unknown): value is SessionFocus {
 	}
 
 	const fields: { feature?: unknown; task?: unknown } = value;
+
 	return isOptionalString(fields.feature) && isOptionalString(fields.task);
 }
 
@@ -94,6 +96,7 @@ async function requestLabel(
 	}
 
 	const call = response.content.find((part) => part.type === "toolCall" && part.name === SET_FOCUS_TOOL.name);
+
 	if (call?.type !== "toolCall" || !isSessionFocus(call.arguments)) {
 		return undefined;
 	}
@@ -113,8 +116,10 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const shownFocus = focus;
+
 		if (!shownFocus.feature && !shownFocus.task) {
 			ctx.ui.setWidget(ENTRY_TYPE, undefined);
+
 			return;
 		}
 
@@ -136,11 +141,13 @@ export default function (pi: ExtensionAPI) {
 			task: (change.task ?? focus.task)?.trim(),
 		};
 		showWidget(ctx);
+
 		return focus;
 	};
 
 	const restoreFocus = (ctx: ExtensionContext) => {
 		focus = {};
+
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type !== "custom" || entry.customType !== ENTRY_TYPE) {
 				continue;
@@ -160,6 +167,7 @@ export default function (pi: ExtensionAPI) {
 		labelRequest = request;
 
 		let label: SessionFocus | undefined;
+
 		try {
 			label = await requestLabel(
 				ctx,
@@ -172,6 +180,7 @@ export default function (pi: ExtensionAPI) {
 			if (!request.signal.aborted) {
 				ctx.ui.notify(`session-focus: ${error instanceof Error ? error.message : String(error)}`, "warning");
 			}
+
 			return;
 		}
 
@@ -186,14 +195,17 @@ export default function (pi: ExtensionAPI) {
 	const findLabelModel = (ctx: ExtensionContext): Model<Api> | null => {
 		const modelRef = loadConfig(pi).models?.extensions?.["session-focus"];
 		const separator = modelRef?.indexOf("/") ?? -1;
+
 		if (!modelRef || separator <= 0) {
 			return null;
 		}
 
 		const model = ctx.modelRegistry.find(modelRef.slice(0, separator), modelRef.slice(separator + 1));
+
 		if (!model) {
 			ctx.ui.notify(`session-focus: ${modelRef} is not available`, "warning");
 		}
+
 		return model ?? null;
 	};
 
@@ -214,6 +226,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		labelModel ??= findLabelModel(ctx);
+
 		if (labelModel) {
 			void labelFromMessage(ctx, labelModel, event.text);
 		}
@@ -226,21 +239,25 @@ export default function (pi: ExtensionAPI) {
 				value: name,
 				label: name,
 			}));
+
 			return matchingSubcommands.length > 0 ? matchingSubcommands : null;
 		},
 		handler: async (args, ctx) => {
 			const [, subcommand = "", text = ""] = args.trim().match(/^(\S*)\s*([\s\S]*)$/) ?? [];
 
 			let change: SessionFocus;
+
 			if (subcommand === "feature" || subcommand === "task") {
 				change = { [subcommand]: text };
 			} else if (subcommand === "clear") {
 				change = { feature: "", task: "" };
 			} else if (subcommand === "") {
 				ctx.ui.notify(describe(focus), "info");
+
 				return;
 			} else {
 				ctx.ui.notify("Usage: /focus feature <text> | task <text> | clear", "error");
+
 				return;
 			}
 

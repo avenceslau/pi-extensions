@@ -31,13 +31,16 @@ const REVIEW_AGENT_TYPES = new Set([
   "shepherd-refactor-review",
   "comment-review",
 ]);
+
 const REVIEW_AGENT_REASON =
   "Reviews run only from the post-change audit, which already reviews your changes automatically, or from the user's /audit, /correctness, and /review-mr commands. Do not launch review or verification agents yourself.";
+
 const DUPLICATE_PROMPT_WINDOW_MS = 10 * 60_000;
 
 const COMMAND_START = String.raw`(?:^|[;&|(\n\`]|\$\()\s*(?:(?:sudo|command|nohup|time|xargs(?:\s+-\S+)*)\s+)*`;
 const GIT = String.raw`git(?:\s+-[Cc]\s+\S+|\s+--\S+)*\s+`;
 const GIT_STATE_SUBCOMMANDS = String.raw`(?:reset|commit|push|checkout|switch|restore|stash|clean|rebase|merge|cherry-pick)\b|worktree\s+remove\b`;
+
 const GIT_WRITE_SUBCOMMANDS = [
   GIT_STATE_SUBCOMMANDS,
   String.raw`(?:apply|am)\b`,
@@ -45,15 +48,18 @@ const GIT_WRITE_SUBCOMMANDS = [
   String.raw`branch\s+-[dDmM]\b`,
   String.raw`tag\s+(?:-[adfs]\b|[^-\s])`,
 ].join("|");
+
 const FILE_EDIT_COMMANDS = String.raw`(?:sed|perl)(?:\s+-\S+)*?\s+-[a-zA-Z0-9]*i(?![a-zA-Z0-9])|(?:rm|mv)\b`;
 const FILE_REDIRECT = String.raw`>>?\|?(?!&)\s*(?!/dev/(?:null|stdout|stderr|tty)\b|/tmp/|/private/tmp/|/var/folders/|/private/var/folders/)[^\s&|;<>()]`;
 
 const GIT_STATE_MUTATION = new RegExp(`${COMMAND_START}${GIT}(?:${GIT_STATE_SUBCOMMANDS})`);
+
 const FILE_OR_GIT_MUTATION = new RegExp(
   `${COMMAND_START}(?:${GIT}(?:${GIT_WRITE_SUBCOMMANDS})|${FILE_EDIT_COMMANDS})|${FILE_REDIRECT}`,
 );
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+
 const WRITABLE_HOME_DIRECTORIES = [
   "Library/Caches",
   ".cache",
@@ -104,6 +110,7 @@ export function parseSandboxedCommand(
   command: string,
 ): { profile: string; shell: string; command: string } | undefined {
   const match = SANDBOXED_COMMAND.exec(command);
+
   if (!match) {
     return undefined;
   }
@@ -121,12 +128,14 @@ function unsandboxedCommand(command: string): string {
 
 function homeWriteDenyRules(home: string): string {
   const writable = WRITABLE_HOME_DIRECTORIES.map((directory) => `(subpath "${join(home, directory)}")`).join(" ");
+
   return `(deny file-write* (subpath "${home}"))(allow file-write* ${writable})`;
 }
 
 export function sandboxCommand(command: string, home: string): string {
   const sandboxed = parseSandboxedCommand(command);
   const profile = (sandboxed?.profile ?? "(version 1)(allow default)") + homeWriteDenyRules(home);
+
   return [
     SANDBOX_EXEC,
     "-p",
@@ -144,6 +153,7 @@ export function taskOutputAgentIds(text: string): string[] {
 export function frontmatterModel(text: string): string | undefined {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
   const value = frontmatter ? /^model:\s*(.+?)\s*$/m.exec(frontmatter)?.[1] : undefined;
+
   return value?.replace(/^["']|["']$/g, "") || undefined;
 }
 
@@ -156,26 +166,32 @@ export function modelMatchesPin(requested: string, pinned: string): boolean {
 // Same precedence as pi-subagents: project .pi/agents, then .agents/agents, then global.
 function pinnedModel(agentType: string, cwd: string): string | undefined {
   const agentDirectory = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+
   const agentFiles = [
     join(cwd, ".pi", "agents", `${agentType}.md`),
     join(cwd, ".agents", "agents", `${agentType}.md`),
     join(agentDirectory, "agents", `${agentType}.md`),
   ];
+
   const agentFile = agentFiles.find((path) => existsSync(path));
+
   return agentFile ? frontmatterModel(readFileSync(agentFile, "utf8")) : undefined;
 }
 
 function repositoryWriters(): Map<string, RepositoryWriter> {
   const store = globalThis as typeof globalThis & { [REPOSITORY_WRITERS_KEY]?: Map<string, RepositoryWriter> };
   store[REPOSITORY_WRITERS_KEY] ??= new Map();
+
   return store[REPOSITORY_WRITERS_KEY];
 }
 
 function nearestExistingDirectory(path: string): string {
   let directory = dirname(path);
+
   while (!existsSync(directory) && dirname(directory) !== directory) {
     directory = dirname(directory);
   }
+
   return directory;
 }
 
@@ -201,11 +217,13 @@ export default function (pi: ExtensionAPI) {
     const result = await pi.exec("git", ["-C", directory, "rev-parse", "--show-toplevel"], { timeout: 5_000 });
     const root = result.code === 0 ? result.stdout.trim() : undefined;
     repositoryRootByDirectory.set(directory, root);
+
     return root;
   };
 
   const releaseRepositories = () => {
     const writers = repositoryWriters();
+
     for (const [root, writer] of writers) {
       if (writer.sessionId === sessionId) {
         writers.delete(root);
@@ -217,12 +235,14 @@ export default function (pi: ExtensionAPI) {
   // holds the repository until it settles.
   const claimRepository = async (directory: string, sessionName: string): Promise<ToolCallEventResult | undefined> => {
     const root = await repositoryRoot(directory);
+
     if (!root) {
       return undefined;
     }
 
     const writers = repositoryWriters();
     const holder = writers.get(root);
+
     if (holder && holder.sessionId !== sessionId) {
       return {
         block: true,
@@ -231,6 +251,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     writers.set(root, { sessionId, sessionName });
+
     return undefined;
   };
 
@@ -239,6 +260,7 @@ export default function (pi: ExtensionAPI) {
     ctx: ExtensionContext,
   ): ToolCallEventResult | undefined => {
     const agentType = input.subagent_type;
+
     if (
       typeof agentType !== "string" ||
       typeof input.resume === "string"
@@ -251,6 +273,7 @@ export default function (pi: ExtensionAPI) {
     const pinned = pinnedModel(agentType, ctx.cwd);
     const { models } = loadConfig(pi);
     const configured = models?.agents?.[agentType];
+
     if (
       pinned &&
       requested &&
@@ -264,11 +287,13 @@ export default function (pi: ExtensionAPI) {
 
     const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
     const effectiveModel = pinned ?? requested ?? configured ?? currentModel;
+
     if (
       effectiveModel &&
       isForbiddenForSubagents(models, effectiveModel)
     ) {
       const allowed = models?.subagent?.[0];
+
       return {
         block: true,
         reason: `Subagents may not run on ${effectiveModel}, but ${agentType} would; pass an allowed model${allowed ? ` such as ${allowed}` : ""}`,
@@ -282,6 +307,7 @@ export default function (pi: ExtensionAPI) {
     ) {
       input.model = configured;
     }
+
     return undefined;
   };
 
@@ -310,6 +336,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const now = Date.now();
+
     for (const [prompt, { spawnedAt }] of recentPrompts) {
       if (now - spawnedAt > DUPLICATE_PROMPT_WINDOW_MS) {
         recentPrompts.delete(prompt);
@@ -317,6 +344,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const prompt = input.prompt.trim().replace(/\s+/g, " ");
+
     if (recentPrompts.has(prompt)) {
       return {
         block: true,
@@ -325,6 +353,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     recentPrompts.set(prompt, { spawnedAt: now, toolCallId });
+
     return undefined;
   };
 
@@ -350,6 +379,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const input = event.input as { command: string };
+
     if (mutatesFilesOrGit(unsandboxedCommand(input.command))) {
       return {
         block: true,
@@ -360,14 +390,17 @@ export default function (pi: ExtensionAPI) {
     if (canSandbox) {
       input.command = sandboxCommand(input.command, home);
     }
+
     return undefined;
   };
 
   const writeTargetDirectory = (event: ToolCallEvent, cwd: string): string | undefined => {
     const input = event.input as Record<string, unknown>;
+
     const writesFile =
       event.toolName === "write" ||
       event.toolName === "edit";
+
     if (
       writesFile &&
       typeof input.path === "string"
@@ -393,13 +426,16 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName === "Agent") {
       const input = event.input as Record<string, unknown>;
+
       if (subagentType()) {
         return checkAgentModel(input, ctx);
       }
+
       return checkReviewAgent(input) ?? checkAgentModel(input, ctx) ?? checkDuplicatePrompt(input, event.toolCallId);
     }
 
     const agentType = subagentType();
+
     if (!agentType) {
       return undefined;
     }
@@ -417,6 +453,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const input = event.input as Record<string, unknown>;
+
     if (
       agentType === GIT_STATE_PRESERVING_AGENT_TYPE &&
       event.toolName === "bash" &&
@@ -427,6 +464,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const directory = writeTargetDirectory(event, ctx.cwd);
+
     if (!directory) {
       return undefined;
     }
@@ -447,6 +485,7 @@ export default function (pi: ExtensionAPI) {
 
     const input = event.input as Record<string, unknown>;
     const text = event.toolName === "read" ? input.path : input.command;
+
     if (typeof text !== "string") {
       return undefined;
     }
@@ -454,12 +493,14 @@ export default function (pi: ExtensionAPI) {
     for (const agentId of taskOutputAgentIds(text)) {
       consumeCompletionNotification(agentId);
     }
+
     return undefined;
   });
 
   // The parent stopped the agent itself, so a notification that it stopped adds nothing.
   const unsubscribeFailed = pi.events.on("subagents:failed", (data) => {
     const record = data as { id?: unknown; status?: unknown };
+
     if (
       subagentType() ||
       record.status !== "stopped" ||

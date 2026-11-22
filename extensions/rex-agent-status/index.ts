@@ -1,21 +1,26 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type StatusState = "working" | "blocked" | "done" | "error" | "clear";
+
 type BlockedKind = "permission" | "question";
 
 const TITLE = Buffer.from("Pi", "utf8").toString("base64");
 
 function statusSequence(state: StatusState, message?: string, kind?: BlockedKind): string {
 	const fields = [`state=${state}`, "id=pi"];
+
 	if (state !== "clear") {
 		fields.push("app=pi", `title=${TITLE}`);
 	}
+
 	if (kind) {
 		fields.push(`kind=${kind}`);
 	}
+
 	if (message) {
 		fields.push(`msg=${Buffer.from(message, "utf8").toString("base64")}`);
 	}
+
 	return `\u001b]7501;${fields.join(":")}\u001b\\`;
 }
 
@@ -32,9 +37,11 @@ export default function (pi: ExtensionAPI) {
 
 	function publish(state: StatusState, message?: string, kind?: BlockedKind): void {
 		const sequence = statusSequence(state, message, kind);
+
 		if (sequence === lastSequence) {
 			return;
 		}
+
 		lastSequence = sequence;
 		process.stdout.write(sequence);
 	}
@@ -49,6 +56,7 @@ export default function (pi: ExtensionAPI) {
 		lastStopReason = undefined;
 		lastSequence = undefined;
 		active = ctx.isIdle() === false;
+
 		if (active) {
 			publish("working", "Pi is working");
 		} else {
@@ -60,6 +68,7 @@ export default function (pi: ExtensionAPI) {
 		if (!started) {
 			return;
 		}
+
 		active = true;
 		blocked = false;
 		lastStopReason = undefined;
@@ -70,6 +79,7 @@ export default function (pi: ExtensionAPI) {
 		if (!started || event.message.role !== "assistant") {
 			return;
 		}
+
 		lastStopReason = event.message.stopReason;
 	});
 
@@ -77,7 +87,9 @@ export default function (pi: ExtensionAPI) {
 		if (!started || !active) {
 			return;
 		}
+
 		blocked = true;
+
 		if (event.kind === "confirm") {
 			publish("blocked", "Pi needs confirmation", "permission");
 		} else {
@@ -89,7 +101,9 @@ export default function (pi: ExtensionAPI) {
 		if (!started || !blocked) {
 			return;
 		}
+
 		blocked = false;
+
 		if (active) {
 			publish("working", "Pi is working");
 		}
@@ -102,6 +116,7 @@ export default function (pi: ExtensionAPI) {
 
 		active = false;
 		blocked = false;
+
 		if (lastStopReason === "error") {
 			publish("error", "Pi stopped with an error");
 		} else if (lastStopReason === "aborted") {

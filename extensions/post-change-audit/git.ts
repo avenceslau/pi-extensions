@@ -24,6 +24,7 @@ export async function git(
     timeout: options.timeout ?? GIT_TIMEOUT_MS,
     maxBuffer: 64 * 1024 * 1024,
   });
+
   return options.untrimmed ? stdout : stdout.trim();
 }
 
@@ -33,9 +34,11 @@ export function shellQuote(value: string): string {
 
 export function countLines(numstat: string): number {
   let lines = 0;
+
   for (const row of numstat.split("\n")) {
     const [added, deleted] = row.split("\t");
     lines += (Number(added) || 0) + (Number(deleted) || 0);
   }
+
   return lines;
 }

@@ -20,6 +20,7 @@ async function withClefServer(
   { envelope = false } = {},
 ): Promise<void> {
   const requests: ReceivedRequest[] = [];
+
   const server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk) => {
@@ -33,7 +34,9 @@ async function withClefServer(
       response.end(JSON.stringify(envelope ? { result: answers, success: true, errors: [], messages: [] } : answers));
     });
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
   try {
     const address = server.address();
     assert.ok(

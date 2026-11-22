@@ -11,6 +11,13 @@ pi install git:github.com/avenceslau/pi-extensions
 
 Run `/reload` in Pi after updating the package.
 
+## Development
+
+`npm run check` runs the extension and Worker tests, applies the vendored anti-slop rules to all owned TypeScript,
+and runs the Worker's Oxfmt, Durability lint and TSRS checks. The anti-slop warning ceiling prevents the current
+migration baseline from growing; `npm run lint:report` prints those findings. Readable-spacing and Worker durability
+rules already fail immediately.
+
 ## Host your own Clef endpoint
 
 The [Clef-only Worker](workers/clef/README.md) uses Workers AI and AI Gateway behind Cloudflare Access,

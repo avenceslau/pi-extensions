@@ -57,6 +57,7 @@ interface FormatterRun {
 
 async function jsFormatter(root: string): Promise<(typeof JS_FORMATTERS)[number] | undefined> {
   const manifest: unknown = await readFile(join(root, "package.json"), "utf8").then(JSON.parse, () => undefined);
+
   const { dependencies = {}, devDependencies = {}, scripts = {} } = Value.Check(PackageManifestSchema, manifest)
     ? manifest
     : {};
@@ -74,6 +75,7 @@ async function jsFormatter(root: string): Promise<(typeof JS_FORMATTERS)[number]
 // rustfmt defaults to the 2015 edition when run on files outside cargo.
 async function rustEdition(root: string): Promise<string> {
   const manifest = await readFile(join(root, "Cargo.toml"), "utf8").catch(() => "");
+
   return /^edition\s*=\s*"(\d{4})"/m.exec(manifest)?.[1] ?? "2021";
 }
 
@@ -85,6 +87,7 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
   const runs: FormatterRun[] = [];
 
   const formatter = rest.length > 0 ? await jsFormatter(root) : undefined;
+
   if (formatter) {
     const local = join(root, "node_modules", ".bin", formatter.name);
     runs.push({
@@ -93,6 +96,7 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
       args: [...formatter.args, ...rest],
     });
   }
+
   if (rust.length > 0) {
     runs.push({
       name: "rustfmt",
@@ -100,6 +104,7 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
       args: ["--edition", await rustEdition(root), ...rust],
     });
   }
+
   if (go.length > 0) {
     runs.push({
       name: "gofmt",
@@ -107,5 +112,6 @@ export async function formatterRuns(root: string, paths: string[]): Promise<Form
       args: ["-w", ...go],
     });
   }
+
   return runs;
 }

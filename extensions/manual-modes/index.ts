@@ -3,6 +3,7 @@ import { Key } from "@earendil-works/pi-tui";
 import { loadConfig } from "../shared/config.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
+
 const REVIEW_AGENTS = new Set([
   "review",
   "code-restraint-review",
@@ -39,8 +40,10 @@ export default function manualModes(pi: ExtensionAPI): void {
     description: "Enable, disable, or show subagent mode: /subagents on|off|status",
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase() || "status";
+
       if (mode !== "on" && mode !== "off" && mode !== "status") {
         ctx.ui.notify("Usage: /subagents on|off|status", "warning");
+
         return;
       }
 
@@ -49,10 +52,12 @@ export default function manualModes(pi: ExtensionAPI): void {
           `Subagent mode is ${subagentsEnabled ? "enabled" : "disabled"}.`,
           "info",
         );
+
         return;
       }
 
       subagentsEnabled = mode === "on";
+
       if (subagentsEnabled) {
         const available = new Set(pi.getAllTools().map((tool) => tool.name));
         const subagentTools = SUBAGENT_TOOLS.filter((name) => available.has(name));
@@ -75,8 +80,10 @@ export default function manualModes(pi: ExtensionAPI): void {
     description: "Enable, disable, or show code-review mode: /review on|off|status",
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase() || "status";
+
       if (mode !== "on" && mode !== "off" && mode !== "status") {
         ctx.ui.notify("Usage: /review on|off|status", "warning");
+
         return;
       }
 
@@ -85,6 +92,7 @@ export default function manualModes(pi: ExtensionAPI): void {
           `Code-review mode is ${reviewEnabled ? "enabled" : "disabled"}.`,
           "info",
         );
+
         return;
       }
 

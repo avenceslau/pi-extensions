@@ -46,7 +46,9 @@ async function runLint(
     const untracked = await git(root, ["ls-files", "--others", "--exclude-standard"], signal);
     paths = untracked.split("\n").filter(Boolean);
   }
+
   const wantsClef = request.clef !== false;
+
   const result = await lint({
     root,
     diffText,
@@ -54,24 +56,29 @@ async function runLint(
     clef: wantsClef ? clef : undefined,
     signal,
   });
+
   if (
     wantsClef &&
     !clef
   ) {
     result.notices.push("Clef is not configured, so only the local rules ran.");
   }
+
   return result;
 }
 
 // /hygiene [ref | paths...]: arguments that name existing files are linted whole; otherwise the first is the base ref.
 function commandRequest(args: string, cwd: string): LintRequest {
   const words = args.trim().split(/\s+/).filter(Boolean);
+
   if (words.length === 0) {
     return {};
   }
+
   if (words.every((word) => existsSync(resolve(cwd, word)))) {
     return { paths: words };
   }
+
   return { base: words[0] };
 }
 
@@ -89,6 +96,7 @@ export default function hygiene(pi: ExtensionAPI): void {
     parameters: HygieneLintSchema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const result = await runLint(ctx.cwd, params, loadConfig(pi).clef, signal);
+
       return {
         content: [{ type: "text" as const, text: formatReport(result) }],
         details: result,

@@ -21,6 +21,7 @@ async function fixture() {
 	await writeFile(join(repo, ".dev.vars.production"), "SECRET=production\n");
 	await writeFile(join(repo, ".git", "config"), "credential=secret\n");
 	await mkdir(join(root, "not-a-repo"));
+
 	return { root, repo };
 }
 
@@ -61,28 +62,37 @@ test("uses glab for the current GitLab origin", async (t) => {
 	await mkdir(contextRoot);
 	t.after(() => rm(base, { recursive: true, force: true }));
 	const calls: Array<{ command: string; args: string[] }> = [];
+
 	const runner: CommandRunner = async (command, args) => {
 		calls.push({ command, args });
+
 		if (command === "git") {
 			return commandResult("ssh://git@gitlab.example.test:2222/group/current.git\n");
 		}
+
 		if (command === "gh") {
 			return commandResult("", 1);
 		}
+
 		if (command === "glab" && args[0] === "repo" && args[1] === "view") {
 			return commandResult(JSON.stringify({ web_url: "https://gitlab.example.test/group/current" }));
 		}
+
 		if (command === "glab" && args[0] === "repo" && args[1] === "search") {
 			return commandResult(JSON.stringify([{ web_url: "https://gitlab.example.test/group/name-match" }]));
 		}
+
 		if (command === "glab" && args[1] === "search") {
 			return commandResult(JSON.stringify([{ project_id: 7, path: "src/runtime.ts" }]));
 		}
+
 		if (command === "glab" && args[1] === "projects/7") {
 			return commandResult(JSON.stringify({ web_url: "https://gitlab.example.test/group/code-match" }));
 		}
+
 		throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
 	};
+
 	const result = await new RepoService({ projectsRoot, contextRoot, runner }).search("runtime");
 
 	assert.equal(result.remoteForge, "gitlab");
@@ -103,27 +113,35 @@ test("uses gh for the current GitHub origin", async (t) => {
 	await mkdir(contextRoot);
 	t.after(() => rm(base, { recursive: true, force: true }));
 	const calls: Array<{ command: string; args: string[] }> = [];
+
 	const runner: CommandRunner = async (command, args) => {
 		calls.push({ command, args });
+
 		if (command === "git") {
 			return commandResult("git@github.example.test:owner/current.git\n");
 		}
+
 		if (command === "glab") {
 			return commandResult("", 1);
 		}
+
 		if (command === "gh" && args[0] === "repo") {
 			return commandResult(JSON.stringify({ url: "https://github.example.test/owner/current" }));
 		}
+
 		if (command === "gh" && args[1] === "repos") {
 			return commandResult(JSON.stringify([{ fullName: "owner/name-match", url: "https://github.example.test/owner/name-match" }]));
 		}
+
 		if (command === "gh" && args[1] === "code") {
 			return commandResult(JSON.stringify([
 				{ path: "src/runtime.ts", repository: { url: "https://github.example.test/owner/code-match" } },
 			]));
 		}
+
 		throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
 	};
+
 	const result = await new RepoService({ projectsRoot, contextRoot, runner }).search("runtime");
 
 	assert.equal(result.remoteForge, "github");
@@ -138,6 +156,7 @@ test("uses gh for the current GitHub origin", async (t) => {
 
 test("clone requires a repository returned by remote search", async () => {
 	const root = await mkdtemp(join(tmpdir(), "repo-codemode-"));
+
 	try {
 		const service = new RepoService({ projectsRoot: root, runner: runCommand });
 		await assert.rejects(service.clone("https://github.com/group/project", new Set()), /prior remote search/);
@@ -149,6 +168,7 @@ test("clone requires a repository returned by remote search", async () => {
 test("repo info redacts credentials from origin URLs", async () => {
 	const root = await mkdtemp(join(tmpdir(), "repo-codemode-"));
 	const repo = join(root, "secure");
+
 	try {
 		await mkdir(repo);
 		assert.equal((await runCommand("git", ["init", repo])).code, 0);
@@ -166,6 +186,7 @@ test("repo info redacts credentials from origin URLs", async () => {
 
 test("read pagination stops on complete lines at the byte limit", async () => {
 	const { root, repo } = await fixture();
+
 	try {
 		const longLines = Array.from({ length: 100 }, (_, index) => `${index + 1}:${"é".repeat(500)}`);
 		await writeFile(join(repo, "src", "large.txt"), longLines.join("\n"));
@@ -189,26 +210,35 @@ test("clone uses the current forge and verifies the resulting origin", async (t)
 	await mkdir(contextRoot);
 	t.after(() => rm(base, { recursive: true, force: true }));
 	const calls: Array<{ command: string; args: string[] }> = [];
+
 	const runner: CommandRunner = async (command, args) => {
 		calls.push({ command, args });
+
 		if (command === "git" && args.includes("remote")) {
 			return commandResult("git@github.example.test:owner/current.git\n");
 		}
+
 		if (command === "git") {
 			return commandResult("git@github.example.test:owner/project.git\n");
 		}
+
 		if (command === "glab") {
 			return commandResult("", 1);
 		}
+
 		if (command === "gh" && args[0] === "repo" && args[1] === "view") {
 			return commandResult(JSON.stringify({ url: "https://github.example.test/owner/current" }));
 		}
+
 		if (command === "gh" && args[0] === "repo" && args[1] === "clone") {
 			await mkdir(join(args[3]!, ".git"));
+
 			return commandResult();
 		}
+
 		throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
 	};
+
 	const project = "https://github.example.test/owner/project";
 	const service = new RepoService({ projectsRoot, contextRoot, runner });
 	const result = await service.clone(project, new Set([project]));
@@ -229,25 +259,33 @@ test("removes a clone whose resulting origin fails verification", async (t) => {
 	await mkdir(projectsRoot);
 	await mkdir(contextRoot);
 	t.after(() => rm(base, { recursive: true, force: true }));
+
 	const runner: CommandRunner = async (command, args) => {
 		if (command === "git" && args.includes("remote")) {
 			return commandResult("git@github.example.test:owner/current.git\n");
 		}
+
 		if (command === "git") {
 			return commandResult("git@github.example.test:attacker/project.git\n");
 		}
+
 		if (command === "glab") {
 			return commandResult("", 1);
 		}
+
 		if (command === "gh" && args[1] === "view") {
 			return commandResult(JSON.stringify({ url: "https://github.example.test/owner/current" }));
 		}
+
 		if (command === "gh" && args[1] === "clone") {
 			await mkdir(join(args[3]!, ".git"));
+
 			return commandResult();
 		}
+
 		throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
 	};
+
 	const project = "https://github.example.test/owner/project";
 	const service = new RepoService({ projectsRoot, contextRoot, runner });
 

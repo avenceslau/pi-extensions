@@ -13,12 +13,15 @@ type PlannotatorResponse =
 
 function listeningPorts(output: string): Set<number> {
   const ports = new Set<number>();
+
   for (const line of output.split("\n")) {
     const match = line.match(/^n(?:127\.0\.0\.1|localhost|\*):([0-9]+)$/);
+
     if (match) {
       ports.add(Number(match[1]));
     }
   }
+
   return ports;
 }
 
@@ -28,6 +31,7 @@ async function currentListeningPorts(pi: ExtensionAPI): Promise<Set<number>> {
     ["-nP", "-a", "-p", String(process.pid), "-iTCP", "-sTCP:LISTEN", "-Fn"],
     { timeout: 2_000 },
   );
+
   return result.code === 0 ? listeningPorts(result.stdout) : new Set();
 }
 
@@ -36,10 +40,12 @@ async function waitForReviewUrl(pi: ExtensionAPI, previousPorts: Set<number>): P
     await new Promise((resolve) => setTimeout(resolve, 50));
     const ports = await currentListeningPorts(pi);
     const newPort = [...ports].find((port) => !previousPorts.has(port));
+
     if (newPort !== undefined) {
       return `http://localhost:${newPort}`;
     }
   }
+
   return undefined;
 }
 
@@ -68,10 +74,12 @@ async function runIncrementalReview(
   ctx: ExtensionCommandContext,
 ): Promise<void> {
   ctx.ui.setStatus("plannotator-incremental", "Opening incremental review…");
+
   try {
     const previousPorts = await currentListeningPorts(pi);
     const responsePromise = requestIncrementalReview(pi, ctx);
     const reviewUrl = await waitForReviewUrl(pi, previousPorts);
+
     if (reviewUrl !== undefined) {
       const opened = await pi.exec("open", [reviewUrl], { timeout: 5_000 });
       ctx.ui.notify(
@@ -81,14 +89,19 @@ async function runIncrementalReview(
     }
 
     const response = await responsePromise;
+
     if (response.status !== "handled") {
       ctx.ui.notify(response.error ?? "Plannotator is unavailable", "error");
+
       return;
     }
+
     if (response.result.feedback) {
       pi.sendUserMessage(response.result.feedback, { deliverAs: "followUp" });
+
       return;
     }
+
     ctx.ui.notify(
       response.result.approved ? "Incremental review approved." : "Incremental review closed without feedback.",
       "info",
@@ -109,14 +122,17 @@ export default function plannotatorIncremental(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       if (args.trim()) {
         ctx.ui.notify("Usage: /review-incremental", "warning");
+
         return;
       }
 
       const plannotatorAvailable = pi
         .getCommands()
         .some((command) => command.name === "plannotator-review" || command.name.startsWith("plannotator-review:"));
+
       if (!plannotatorAvailable) {
         ctx.ui.notify("Plannotator is not loaded in this session", "error");
+
         return;
       }
 

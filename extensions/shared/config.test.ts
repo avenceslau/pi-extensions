@@ -20,6 +20,7 @@ type EventsOnly = Pick<ExtensionAPI, "events">;
 
 function fakePi(): EventsOnly {
   const emitter = new EventEmitter();
+
   return {
     events: {
       emit: (channel, data) => {
@@ -27,6 +28,7 @@ function fakePi(): EventsOnly {
       },
       on: (channel, handler) => {
         emitter.on(channel, handler);
+
         return () => emitter.off(channel, handler);
       },
     },

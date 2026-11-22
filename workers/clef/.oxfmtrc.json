@@ -15,7 +15,6 @@
     ".windsurf/**",
     "node_modules/**",
     "dist/**",
-    ".wrangler/**",
-    "tools/oxlint/anti-slop/**"
+    ".wrangler/**"
   ]
 }
