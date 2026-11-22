@@ -6,6 +6,7 @@ import { Key } from "@earendil-works/pi-tui";
 import { loadConfig } from "../shared/config.ts";
 
 const SUBAGENT_TOOLS = ["Agent", "get_subagent_result", "steer_subagent"];
+const MODES = new Set(["on", "off", "status"]);
 
 const REVIEW_AGENTS = new Set([
   "review",
@@ -38,13 +39,28 @@ export default function manualModes(pi: ExtensionAPI): void {
     );
   }
 
+  function setSubagentToolsEnabled(enabled: boolean): void {
+    const activeTools = pi
+      .getActiveTools()
+      .filter((name) => !SUBAGENT_TOOLS.includes(name));
+
+    if (!enabled) {
+      pi.setActiveTools(activeTools);
+      return;
+    }
+
+    const available = new Set(pi.getAllTools().map((tool) => tool.name));
+    const subagentTools = SUBAGENT_TOOLS.filter((name) => available.has(name));
+    pi.setActiveTools([...new Set([...activeTools, ...subagentTools])]);
+  }
+
   pi.registerCommand("subagents", {
     description:
       "Enable, disable, or show subagent mode: /subagents on|off|status",
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase() || "status";
 
-      if (mode !== "on" && mode !== "off" && mode !== "status") {
+      if (!MODES.has(mode)) {
         ctx.ui.notify("Usage: /subagents on|off|status", "warning");
 
         return;
@@ -60,20 +76,7 @@ export default function manualModes(pi: ExtensionAPI): void {
       }
 
       subagentsEnabled = mode === "on";
-
-      if (subagentsEnabled) {
-        const available = new Set(pi.getAllTools().map((tool) => tool.name));
-        const subagentTools = SUBAGENT_TOOLS.filter((name) =>
-          available.has(name),
-        );
-        pi.setActiveTools([
-          ...new Set([...pi.getActiveTools(), ...subagentTools]),
-        ]);
-      } else {
-        pi.setActiveTools(
-          pi.getActiveTools().filter((name) => !SUBAGENT_TOOLS.includes(name)),
-        );
-      }
+      setSubagentToolsEnabled(subagentsEnabled);
 
       updateStatus(ctx);
       ctx.ui.notify(
@@ -89,7 +92,7 @@ export default function manualModes(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase() || "status";
 
-      if (mode !== "on" && mode !== "off" && mode !== "status") {
+      if (!MODES.has(mode)) {
         ctx.ui.notify("Usage: /review on|off|status", "warning");
 
         return;
@@ -120,19 +123,7 @@ export default function manualModes(pi: ExtensionAPI): void {
       subagentsEnabled = enabled;
       reviewEnabled = enabled;
 
-      if (enabled) {
-        const available = new Set(pi.getAllTools().map((tool) => tool.name));
-        const subagentTools = SUBAGENT_TOOLS.filter((name) =>
-          available.has(name),
-        );
-        pi.setActiveTools([
-          ...new Set([...pi.getActiveTools(), ...subagentTools]),
-        ]);
-      } else {
-        pi.setActiveTools(
-          pi.getActiveTools().filter((name) => !SUBAGENT_TOOLS.includes(name)),
-        );
-      }
+      setSubagentToolsEnabled(enabled);
 
       updateStatus(ctx);
       ctx.ui.notify(
@@ -159,9 +150,7 @@ export default function manualModes(pi: ExtensionAPI): void {
     subagentsEnabled = true;
     reviewEnabled = true;
     autoAuditEnabled = true;
-    const available = new Set(pi.getAllTools().map((tool) => tool.name));
-    const subagentTools = SUBAGENT_TOOLS.filter((name) => available.has(name));
-    pi.setActiveTools([...new Set([...pi.getActiveTools(), ...subagentTools])]);
+    setSubagentToolsEnabled(true);
     updateStatus(ctx);
   });
 

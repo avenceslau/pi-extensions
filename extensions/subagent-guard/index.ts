@@ -105,12 +105,12 @@ export function mutatesFilesOrGit(command: string): boolean {
   return FILE_OR_GIT_MUTATION.test(stripQuotedText(command));
 }
 
-export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
+export function shellQuote(argument: string): string {
+  return `'${argument.replaceAll("'", `'"'"'`)}'`;
 }
 
-function shellUnquote(value: string): string {
-  return value.replaceAll(`'"'"'`, "'");
+function shellUnquote(quotedText: string): string {
+  return quotedText.replaceAll(`'"'"'`, "'");
 }
 
 export function parseSandboxedCommand(
@@ -122,10 +122,12 @@ export function parseSandboxedCommand(
     return undefined;
   }
 
+  const [, profile, shell, innerCommand] = match;
+
   return {
-    profile: shellUnquote(match[1]),
-    shell: shellUnquote(match[2]),
-    command: shellUnquote(match[3]),
+    profile: shellUnquote(profile),
+    shell: shellUnquote(shell),
+    command: shellUnquote(innerCommand),
   };
 }
 
@@ -163,11 +165,11 @@ export function taskOutputAgentIds(text: string): string[] {
 
 export function frontmatterModel(text: string): string | undefined {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
-  const value = frontmatter
+  const modelLine = frontmatter
     ? /^model:\s*(.+?)\s*$/m.exec(frontmatter)?.[1]
     : undefined;
 
-  return value?.replace(/^["']|["']$/g, "") || undefined;
+  return modelLine?.replace(/^["']|["']$/g, "") || undefined;
 }
 
 // pi-subagents accepts fuzzy model names such as "opus", so a request that names part of the
@@ -213,14 +215,9 @@ function nearestExistingDirectory(path: string): string {
   return directory;
 }
 
-function resolveToolPath(path: string, cwd: string): string {
-  return resolve(cwd, path.replace(/^@/, "").replace(/^~(?=\/)/, homedir()));
-}
-
 export default function (pi: ExtensionAPI) {
   const sessionId = randomUUID();
   const repositoryRootByDirectory = new Map<string, string | undefined>();
-  // Normalized prompt to when, and by which tool call, the main session spawned an agent with it.
   const recentPrompts = new Map<
     string,
     { spawnedAt: number; toolCallId: string }
@@ -238,12 +235,12 @@ export default function (pi: ExtensionAPI) {
       return repositoryRootByDirectory.get(directory);
     }
 
-    const result = await pi.exec(
+    const gitResult = await pi.exec(
       "git",
       ["-C", directory, "rev-parse", "--show-toplevel"],
       { timeout: 5_000 },
     );
-    const root = result.code === 0 ? result.stdout.trim() : undefined;
+    const root = gitResult.code === 0 ? gitResult.stdout.trim() : undefined;
     repositoryRootByDirectory.set(directory, root);
 
     return root;
@@ -303,11 +300,13 @@ export default function (pi: ExtensionAPI) {
     const { models } = loadConfig(pi);
     const configured = models?.agents?.[agentType];
 
-    if (pinned && requested && !modelMatchesPin(requested, pinned)) {
-      return {
-        block: true,
-        reason: `${agentType} is pinned to ${pinned}, which overrides the model argument; omit model or choose an agent type pinned to ${requested}`,
-      };
+    if (pinned && requested) {
+      if (!modelMatchesPin(requested, pinned)) {
+        return {
+          block: true,
+          reason: `${agentType} is pinned to ${pinned}, which overrides the model argument; omit model or choose an agent type pinned to ${requested}`,
+        };
+      }
     }
 
     const currentModel = ctx.model
@@ -324,8 +323,10 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    if (!pinned && !requested && configured) {
-      input.model = configured;
+    if (!pinned && !requested) {
+      if (configured) {
+        input.model = configured;
+      }
     }
 
     return undefined;
@@ -351,7 +352,6 @@ export default function (pi: ExtensionAPI) {
     };
   };
 
-  // An unattended main session once spawned two agents with the same prompt twelve seconds apart.
   const checkDuplicatePrompt = (
     input: Record<string, unknown>,
     toolCallId: string,
@@ -432,7 +432,10 @@ export default function (pi: ExtensionAPI) {
     const writesFile = event.toolName === "write" || event.toolName === "edit";
 
     if (writesFile && typeof input.path === "string") {
-      return nearestExistingDirectory(resolveToolPath(input.path, cwd));
+      const pathFromTool = input.path
+        .replace(/^@/, "")
+        .replace(/^~(?=\/)/, homedir());
+      return nearestExistingDirectory(resolve(cwd, pathFromTool));
     }
 
     if (
