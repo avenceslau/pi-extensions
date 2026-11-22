@@ -68,6 +68,7 @@ export default {
   },
   forges: { "git.example.com": "gitlab" },
   agentRoles: { readOnly: ["security-review"], review: ["security-review"] },
+  sessionFocus: { backend: "rex" },
 } satisfies PiExtensionsConfig;
 ```
 
@@ -81,7 +82,7 @@ Cloudflare account through the Workers AI REST API, with an API token that can r
 `model: "clef-flash"` for the smaller, faster model. `auth.command` runs a program that prints the token instead,
 for tokens that expire. Without `clef`, the judged hygiene rules are skipped and the audit runs its fallbacks.
 
-A later source replaces `clef` whole, overrides `models`, `models.agents` and `forges` key by key, and adds to the `agentRoles` lists.
+A later source replaces `clef` whole, overrides `models`, `models.agents`, `forges` and `sessionFocus` key by key, and adds to the `agentRoles` lists.
 
 ## Opening reviews
 
@@ -94,12 +95,14 @@ need an entry under `forges` in the [config](#config), such as `{ "forges": { "g
 - `/btw <question>` opens a forked Pi session in a Herdr pane to the right, with the question already asked, so the
   main session keeps going; `/merge` in the side session sends its answer back. The side session runs on
   `models.extensions.btw` from the [config](#config), or on the parent's model.
-- `session-focus/` shows `Working on <feature> | Doing <task>` below the prompt. Each message you send goes, in the
-  background, to `models.extensions["session-focus"]` together with the current label, and that model updates it
-  through a `set_focus` tool; without that model the label changes only through `/focus feature <text>`,
-  `/focus task <text>` and `/focus clear`. The label is stored in the session, so it survives `/resume` and follows
-  `/tree` branches.
+- `session-focus/` shows `Working on <feature> | Doing <task>` below the prompt with the default `pi` backend, or
+  appends it to the terminal title with `sessionFocus.backend: "rex"`. Each message you send goes, in the background,
+  to `models.extensions["session-focus"]` together with the current label, and that model updates it through a
+  `set_focus` tool; without that model the label changes only through `/focus feature <text>`, `/focus task <text>`
+  and `/focus clear`. The label is stored in the session, so it survives `/resume` and follows `/tree` branches.
 - `/spend` shows what your sessions cost, from the usage recorded in their session files.
+- `rex/` reports Pi's working, blocked, done and error states to Rex, which can show tab activity and native
+  notifications with per-state sounds.
 - `compact-footer/` replaces the footer with a compact one: directory and branch, token counts, cache hit rate,
   cost, context use against the window, and the model with its thinking level.
 - `bash-timeout/` makes `timeout` a required parameter of the `bash` tool.

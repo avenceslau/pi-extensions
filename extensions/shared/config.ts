@@ -51,11 +51,16 @@ const AgentRolesConfigSchema = Type.Object({
   review: Type.Optional(Type.Array(Type.String())),
 });
 
+const SessionFocusConfigSchema = Type.Object({
+  backend: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("rex")])),
+});
+
 const PiExtensionsConfigSchema = Type.Object({
   clef: Type.Optional(ClefConfigSchema),
   models: Type.Optional(ModelsConfigSchema),
   forges: Type.Optional(Type.Record(Type.String(), ForgeSchema)),
   agentRoles: Type.Optional(AgentRolesConfigSchema),
+  sessionFocus: Type.Optional(SessionFocusConfigSchema),
 });
 
 type Equal<A, B> =
@@ -195,6 +200,10 @@ export function mergeConfig(
         ...(base.agentRoles?.review ?? []),
         ...(override.agentRoles?.review ?? []),
       ],
+    },
+    sessionFocus: {
+      ...base.sessionFocus,
+      ...override.sessionFocus,
     },
   };
 }

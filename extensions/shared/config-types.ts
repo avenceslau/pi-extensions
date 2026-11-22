@@ -41,6 +41,9 @@ export interface PiExtensionsConfig {
   models?: ModelsConfig;
   forges?: Record<string, Forge>;
   agentRoles?: AgentRolesConfig;
+  sessionFocus?: {
+    backend?: "pi" | "rex";
+  };
 }
 
 export interface ConfigRequest {
