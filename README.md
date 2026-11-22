@@ -99,7 +99,7 @@ Use it in Pi or directly from a checkout:
 node --experimental-strip-types extensions/hygiene/cli.ts [--diff file|-] [--root dir] [paths...] [--json] [--check] [--fail-on error|warning|info] [--no-clef]
 ```
 
-With no paths or diff, the CLI checks uncommitted changes and untracked files. `--check` exits with status 1 when a finding meets the `--fail-on` threshold (default: `warning`). Add new rule traits under `extensions/hygiene/traits/`, register them in `extensions/hygiene/traits.ts`, and increment a rule's `version` when changing it to invalidate cached judgments.
+With no arguments, `/hygiene` and `hygiene_lint` check uncommitted changes and untracked files. The standalone CLI requires paths or `--diff`. `--check` exits with status 1 when a finding meets the `--fail-on` threshold (default: `warning`). Add new rule traits under `extensions/hygiene/traits/`, register them in `extensions/hygiene/traits.ts`, and increment a rule's `version` when changing it to invalidate cached judgments.
 
 ## Model failover and subagent safety
 
