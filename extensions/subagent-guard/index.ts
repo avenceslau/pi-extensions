@@ -20,7 +20,6 @@ const READ_ONLY_AGENT_TYPES = new Set([
   "code-restraint-review",
   "comment-review",
   "refactor-review",
-  "shepherd-refactor-review",
   "Plan",
 ]);
 
@@ -33,7 +32,6 @@ const REVIEW_AGENT_TYPES = new Set([
   "review",
   "code-restraint-review",
   "refactor-review",
-  "shepherd-refactor-review",
   "comment-review",
 ]);
 
