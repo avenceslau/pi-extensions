@@ -14,7 +14,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "./shared/config.ts";
+import { loadConfig } from "../shared/config.ts";
 
 type MergePayload = {
   id: string;

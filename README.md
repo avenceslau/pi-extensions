@@ -53,7 +53,7 @@ export default {
 } satisfies PiExtensionsConfig;
 ```
 
-`extensions/user-config.ts` reads it at session start, so edits apply after `/reload`. Node strips its types, so it
+`extensions/user-config/index.ts` reads it at session start, so edits apply after `/reload`. Node strips its types, so it
 can use only erasable syntax (no `enum` or parameter properties). Contributions and the file are checked against
 the same schema at runtime; an invalid file is ignored with an error naming the offending field.
 
@@ -76,15 +76,16 @@ need an entry under `forges` in the [config](#config), such as `{ "forges": { "g
 - `/btw <question>` opens a forked Pi session in a Herdr pane to the right, with the question already asked, so the
   main session keeps going; `/merge` in the side session sends its answer back. The side session runs on
   `models.extensions.btw` from the [config](#config), or on the parent's model.
-- `session-focus.ts` shows `Working on <feature> | Doing <task>` below the prompt. Each message you send goes, in the
+- `session-focus/` shows `Working on <feature> | Doing <task>` below the prompt. Each message you send goes, in the
   background, to `models.extensions["session-focus"]` together with the current label, and that model updates it
   through a `set_focus` tool; without that model the label changes only through `/focus feature <text>`,
   `/focus task <text>` and `/focus clear`. The label is stored in the session, so it survives `/resume` and follows
   `/tree` branches.
 - `/spend` shows what your sessions cost, from the usage recorded in their session files.
-- `compact-footer.ts` replaces the footer with a compact one: directory and branch, token counts, cache hit rate,
+- `compact-footer/` replaces the footer with a compact one: directory and branch, token counts, cache hit rate,
   cost, context use against the window, and the model with its thinking level.
-- `bash-timeout.ts` makes `timeout` a required parameter of the `bash` tool.
+- `bash-timeout/` makes `timeout` a required parameter of the `bash` tool.
+- `rex-agent-status/` reports working, blocked, finished and failed states to Rex when Pi runs in a Rex block.
 - `repo-codemode/` adds `repo_search`, which finds repositories under `~/projects` and falls back to the current
   repository's GitHub or GitLab forge, and `repo_execute`, which runs JavaScript against them in a QuickJS sandbox.
 
@@ -112,13 +113,13 @@ Press `Ctrl+Shift+A` to toggle both modes together. The slash commands still con
 
 ## Auto-retry and failover
 
-`auto-retry.ts` replaces pi's built-in retry, so keep `retry.enabled: false` in `settings.json`. When a response fails with `stopReason: "error"`, the retry happens at `agent_before_settle`, inside the same run, so `session.prompt()` (and with it a subagent's run) does not return until the retry finishes. Transient errors (connection errors and resets, timeouts, `terminated`, cut-off streams, `This operation was aborted`, overloaded, 500/502/503/504, and genuine 429 rate limits) are retried on the same model with backoff from 2 seconds doubling to a 2-minute cap. Errors that mean a provider is broken fail over immediately: an error matching `models.unavailable` (such as a gateway's 526) marks that model unavailable, and 401, `invalid_token`, API key resolution failures, and a 429 spending limit mark the whole provider unavailable. Three consecutive transient failures on one provider also fail over. Unavailable marks last 10 minutes and are shared by every session in the process, including subagents. Failover switches to the next healthy model after the current one, notifies, and continues the run; when none is healthy, transient errors keep backing off on the current model and provider failures stop with a notification. Context overflow, 400 `invalid_request_error`, and unrecognized errors are never retried, and aborted responses are left alone.
+`auto-retry/` replaces pi's built-in retry, so keep `retry.enabled: false` in `settings.json`. When a response fails with `stopReason: "error"`, the retry happens at `agent_before_settle`, inside the same run, so `session.prompt()` (and with it a subagent's run) does not return until the retry finishes. Transient errors (connection errors and resets, timeouts, `terminated`, cut-off streams, `This operation was aborted`, overloaded, 500/502/503/504, and genuine 429 rate limits) are retried on the same model with backoff from 2 seconds doubling to a 2-minute cap. Errors that mean a provider is broken fail over immediately: an error matching `models.unavailable` (such as a gateway's 526) marks that model unavailable, and 401, `invalid_token`, API key resolution failures, and a 429 spending limit mark the whole provider unavailable. Three consecutive transient failures on one provider also fail over. Unavailable marks last 10 minutes and are shared by every session in the process, including subagents. Failover switches to the next healthy model after the current one, notifies, and continues the run; when none is healthy, transient errors keep backing off on the current model and provider failures stop with a notification. Context overflow, 400 `invalid_request_error`, and unrecognized errors are never retried, and aborted responses are left alone.
 
 The primary chain is `models.primary` from the [config](#config). Subagent sessions, recognized by their `<agentType>#<8 hex>` session name, use `models.subagent`, without any model matching `models.subagentForbidden`. Comma-separated `provider/modelId` lists in `PI_FAILOVER_MODELS` and `PI_SUBAGENT_FAILOVER_MODELS` override them. With no chain, failures retry on the current model only. Press `Esc` during the backoff to cancel it; typing a message cancels it as well. Retry messages and the failed responses are hidden from the model's context.
 
 ## Subagent guard
 
-`subagent-guard.ts` applies rules by subagent type, read from the session name pi-subagents assigns:
+`subagent-guard/` applies rules by subagent type, read from the session name pi-subagents assigns:
 
 - `research`, `Explore`, `review`, `code-restraint-review`, `comment-review`, `refactor-review`, `shepherd-refactor-review`, `Plan`, and the types listed under `agentRoles.readOnly` in the [config](#config) are read-only: `write` and `edit` are blocked, as are bash commands that change git state (commit, reset, checkout, push, stash, rebase, merge, worktree add/remove, tag, and similar), `sed -i`, `perl -pi`, `rm`, `mv`, and redirects into files other than `/dev/null`, `/tmp`, and the macOS temp directories. On macOS every other bash command runs under `sandbox-exec` with writes denied under `$HOME` except caches (`~/Library/Caches`, `~/.cache`, `~/.npm`, `~/.local/share/pnpm`, `~/.cargo`, `~/go`, `~/.bun`).
 - `correctness-review` may write files but cannot change git history or state.

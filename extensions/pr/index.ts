@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadConfig, type Forge } from "./shared/config.ts";
+import { loadConfig, type Forge } from "../shared/config.ts";
 
 const DEFAULT_FORGES: Record<string, Forge> = {
 	"github.com": "github",

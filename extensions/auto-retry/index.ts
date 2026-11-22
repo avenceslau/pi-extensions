@@ -7,7 +7,7 @@ import type {
 import { matchesKey } from "@earendil-works/pi-tui";
 import { isContextOverflow } from "@earendil-works/pi-ai";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { isForbiddenForSubagents, loadConfig, modelChainFromEnv, type ModelsConfig } from "./shared/config.ts";
+import { isForbiddenForSubagents, loadConfig, modelChainFromEnv, type ModelsConfig } from "../shared/config.ts";
 
 // Replaces pi's built-in auto-retry: retries transient provider errors indefinitely with
 // capped exponential backoff and fails over to the next model when a provider is broken.

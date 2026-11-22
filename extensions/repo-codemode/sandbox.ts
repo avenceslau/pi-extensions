@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import type { RepoService } from "./repo-service.js";
+import type { RepoService } from "./repo-service.ts";
 
 const MAX_CODE_BYTES = 20 * 1024;
 const MAX_CALLS = 24;
@@ -100,7 +100,7 @@ export async function executeRepoCode(
 		const initialProjects = new Set([...allowedProjects].slice(0, MAX_REMOTE_PROJECTS));
 		const executionProjects = new Set(initialProjects);
 		const newProjects = new Set<string>();
-		const worker = new Worker(new URL("./sandbox-worker.js", import.meta.url), { workerData: { code } });
+		const worker = new Worker(new URL("./sandbox-worker.ts", import.meta.url), { workerData: { code } });
 		let calls = 0;
 		let searchCalls = 0;
 		let hostBytes = 0;

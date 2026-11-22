@@ -5,8 +5,8 @@ import { dirname, join, resolve } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
 
-import { SUBAGENT_SESSION_NAME } from "./auto-retry.ts";
-import { isForbiddenForSubagents, loadConfig } from "./shared/config.ts";
+import { SUBAGENT_SESSION_NAME } from "../auto-retry/index.ts";
+import { isForbiddenForSubagents, loadConfig } from "../shared/config.ts";
 
 const READ_ONLY_AGENT_TYPES = new Set([
   "research",

@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { loadConfig } from "./shared/config.ts";
+import { loadConfig } from "../shared/config.ts";
 
 interface SessionFocus {
 	feature?: string;

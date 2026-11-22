@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { RepoService, type SearchResult } from "./repo-service.js";
-import { executeRepoCode } from "./sandbox.js";
+import { RepoService, type SearchResult } from "./repo-service.ts";
+import { executeRepoCode } from "./sandbox.ts";
 
 interface RepoToolDetails {
 	remoteProjects?: string[];

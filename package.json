@@ -2,6 +2,17 @@
   "name": "pi-extensions",
   "private": true,
   "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions/*/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
+  },
   "pi-subagents": {
     "agents": [
       "./agents"

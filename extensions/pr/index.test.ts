@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { targetForRemote } from "../extensions/pr.ts";
+import { targetForRemote } from "./index.ts";
 
 test("github.com and gitlab.com work without config", () => {
 	assert.deepEqual(targetForRemote("git@github.com:owner/repo.git", {}), {

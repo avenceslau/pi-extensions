@@ -153,7 +153,7 @@ export function mergeConfig(base: PiExtensionsConfig, override: PiExtensionsConf
 
 // Call after every extension has loaded, such as in a session_start handler or later; a contribution registered by
 // an extension that loads after the caller is missed when this runs in the caller's factory. The user config is the
-// copy extensions/user-config.ts read at the last session start or /reload.
+// copy extensions/user-config/index.ts read at the last session start or /reload.
 export function loadConfig(pi: Pick<ExtensionAPI, "events">): PiExtensionsConfig {
   const contributed: PiExtensionsConfig[] = [];
   const request: ConfigRequest = {
