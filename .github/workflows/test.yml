@@ -20,6 +20,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             workers/clef/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install --yes ripgrep
       - run: npm ci
       - run: npm ci --prefix workers/clef
       - run: npm test
