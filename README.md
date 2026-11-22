@@ -19,6 +19,7 @@ Run `/reload` after installing or updating the package.
 ### Session tools
 
 - `/pr [branch]` opens a pull or merge request in a browser.
+- `/plannotator-last` annotates the latest assistant response; `/plannotator-review [PR URL]` reviews current changes or a GitHub/GitLab review. The agent can invoke the same flows through `plannotator_last` and `plannotator_review`. Install the CLI first with `curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal`.
 - `/btw <question>` starts a side session; `/merge` sends its answer back.
 - `/focus feature <text>`, `/focus task <text>`, and `/focus clear` manage the session label. A configured model can update it automatically.
 - `/spend` summarizes session costs.
