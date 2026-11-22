@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type { Api, Model, Tool } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
@@ -13,6 +14,13 @@ interface SessionFocus {
   task?: string;
 }
 
+type FocusBackend = "pi" | "rex";
+
+interface FocusDisplay {
+  title: string;
+  widget?: string;
+}
+
 const ENTRY_TYPE = "session-focus";
 const SUBCOMMANDS = ["feature", "task", "clear"];
 
@@ -22,7 +30,7 @@ const LABEL_TIMEOUT_MS = 30_000;
 const SET_FOCUS_TOOL: Tool = {
   name: "set_focus",
   description:
-    "Set the label shown under the user's prompt as 'Working on <feature> | Doing <task>'.",
+    "Set the configured focus display as 'Working on <feature> | Doing <task>'.",
   parameters: Type.Object({
     feature: Type.String({
       description: "The overall feature or goal of the session, 2 to 6 words",
@@ -35,7 +43,7 @@ const SET_FOCUS_TOOL: Tool = {
 };
 
 const LABEL_SYSTEM_PROMPT = [
-  "You label a coding agent session for a status line shown under the user's prompt.",
+  "You label a coding agent session for its configured focus display.",
   `You receive the current label and the user's newest message to the agent. Always answer by calling ${SET_FOCUS_TOOL.name}.`,
   "feature: the overall feature or goal of the session. Keep the current feature unless the message clearly starts a different one.",
   "task: what the agent is about to do for this message, starting with a verb ending in -ing, such as 'Writing unit tests'.",
@@ -54,6 +62,30 @@ function describe(focus: SessionFocus): string {
   }
 
   return parts.join(" | ") || "no focus set";
+}
+
+export function buildFocusDisplay(
+  backend: FocusBackend,
+  cwd: string,
+  focus: SessionFocus,
+): FocusDisplay {
+  const directory = basename(cwd) || cwd;
+  const hasFocus = Boolean(focus.feature || focus.task);
+  const display: FocusDisplay = { title: directory };
+
+  if (!hasFocus) {
+    return display;
+  }
+
+  const description = describe(focus);
+
+  if (backend === "rex") {
+    display.title = `${directory} · ${description}`;
+  } else {
+    display.widget = description;
+  }
+
+  return display;
 }
 
 function isOptionalString(value: unknown): boolean {
@@ -117,30 +149,31 @@ async function requestLabel(
 
 export default function (pi: ExtensionAPI) {
   let focus: SessionFocus = {};
+  let backend: FocusBackend = "pi";
   // Looked up on the first message of each session; null when no model is configured or it is unavailable.
   let labelModel: Model<Api> | null | undefined;
   let labelRequest: AbortController | undefined;
 
-  const showWidget = (ctx: ExtensionContext) => {
+  const showFocus = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) {
       return;
     }
 
-    const shownFocus = focus;
+    const display = buildFocusDisplay(backend, ctx.cwd, focus);
+    ctx.ui.setTitle(display.title);
 
-    if (!shownFocus.feature && !shownFocus.task) {
+    if (!display.widget) {
       ctx.ui.setWidget(ENTRY_TYPE, undefined);
 
       return;
     }
 
+    const widget = display.widget;
     ctx.ui.setWidget(
       ENTRY_TYPE,
       (_tui, theme) => ({
         render(width: number) {
-          return [
-            truncateToWidth(theme.fg("accent", describe(shownFocus)), width),
-          ];
+          return [truncateToWidth(theme.fg("accent", widget), width)];
         },
         invalidate() {},
       }),
@@ -156,7 +189,7 @@ export default function (pi: ExtensionAPI) {
       feature: (change.feature ?? focus.feature)?.trim(),
       task: (change.task ?? focus.task)?.trim(),
     };
-    showWidget(ctx);
+    showFocus(ctx);
 
     return focus;
   };
@@ -174,7 +207,7 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    showWidget(ctx);
+    showFocus(ctx);
   };
 
   const labelFromMessage = async (
@@ -240,6 +273,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     labelModel = undefined;
+    backend = loadConfig(pi).sessionFocus?.backend ?? "pi";
     restoreFocus(ctx);
   });
   pi.on("session_tree", async (_event, ctx) => {
