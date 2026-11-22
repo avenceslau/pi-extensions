@@ -14,7 +14,11 @@ interface HunkCursor {
   newLine: number;
 }
 
-function readHunkLine(file: ChangedFile, cursor: HunkCursor, line: string): void {
+function readHunkLine(
+  file: ChangedFile,
+  cursor: HunkCursor,
+  line: string,
+): void {
   if (line.startsWith("\\")) {
     return;
   }
@@ -93,7 +97,9 @@ export function parseDiff(diffText: string): ChangedFile[] {
 }
 
 // Contiguous runs of added lines, for checks that have no parser-built candidates.
-export function addedRuns(file: ChangedFile): { line: number; endLine: number }[] {
+export function addedRuns(
+  file: ChangedFile,
+): { line: number; endLine: number }[] {
   const runs: { line: number; endLine: number }[] = [];
 
   for (const line of [...file.added].sort((a, b) => a - b)) {
@@ -110,7 +116,11 @@ export function addedRuns(file: ChangedFile): { line: number; endLine: number }[
   return runs;
 }
 
-export function countAdded(added: Set<number>, line: number, endLine: number): number {
+export function countAdded(
+  added: Set<number>,
+  line: number,
+  endLine: number,
+): number {
   let count = 0;
 
   for (let current = line; current <= endLine; current += 1) {

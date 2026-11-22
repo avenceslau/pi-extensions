@@ -34,7 +34,12 @@ const DEFAULT_FORGES: Record<string, Forge> = {
 
 const PROJECT_SEGMENT = /^(?!\.+$)[\w.-]+$/;
 const MAX_STACK_FRAMES = 10;
-const PR_REPO_CACHE = join(homedir(), ".cache", "pi-post-change-audit", "repos");
+const PR_REPO_CACHE = join(
+  homedir(),
+  ".cache",
+  "pi-post-change-audit",
+  "repos",
+);
 const PR_CLONE_TIMEOUT_MS = 600_000;
 const FORGE_TIMEOUT_MS = 30_000;
 
@@ -119,7 +124,10 @@ export interface PullRequestCheckout {
 
 // Host and project become credentialed forge calls and cache paths, so both are allow-listed: the host must be
 // github.com, gitlab.com, or a host the config's forges name for the link's forge.
-export function linkedPullRequests(text: string, forges: Record<string, Forge>): PullRequest[] {
+export function linkedPullRequests(
+  text: string,
+  forges: Record<string, Forge>,
+): PullRequest[] {
   const found = PR_PATTERNS.flatMap(({ pattern, forge }) => {
     return [...text.matchAll(pattern)].flatMap((match) => {
       const [url, host, project, number] = match;
@@ -160,16 +168,23 @@ async function forgeApi(
   path: string,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const { stdout } = await execFileAsync(command, ["api", "--hostname", host, path], {
-    signal,
-    timeout: FORGE_TIMEOUT_MS,
-    maxBuffer: 16 * 1024 * 1024,
-  });
+  const { stdout } = await execFileAsync(
+    command,
+    ["api", "--hostname", host, path],
+    {
+      signal,
+      timeout: FORGE_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
 
   return JSON.parse(stdout);
 }
 
-export async function pullRequestInfo(pr: PullRequest, signal: AbortSignal): Promise<PullRequestInfo> {
+export async function pullRequestInfo(
+  pr: PullRequest,
+  signal: AbortSignal,
+): Promise<PullRequestInfo> {
   if (pr.forge === "github") {
     const [pull, user] = await Promise.all([
       forgeApi("gh", pr.host, `repos/${pr.project}/pulls/${pr.number}`, signal),
@@ -207,14 +222,8 @@ export async function pullRequestInfo(pr: PullRequest, signal: AbortSignal): Pro
     forgeApi("glab", pr.host, "user", signal),
   ]);
 
-  const {
-    title,
-    description,
-    author,
-    state,
-    source_branch,
-    target_branch,
-  } = Value.Parse(GitLabMergeRequestSchema, mergeRequest);
+  const { title, description, author, state, source_branch, target_branch } =
+    Value.Parse(GitLabMergeRequestSchema, mergeRequest);
 
   return {
     mine: author.username === Value.Parse(GitLabUserSchema, user).username,
@@ -234,14 +243,22 @@ function forgeHeadRef(pr: PullRequest): string {
     : `refs/merge-requests/${pr.number}/head`;
 }
 
-async function forgeDefaultBranch(pr: PullRequest, signal: AbortSignal): Promise<string> {
+async function forgeDefaultBranch(
+  pr: PullRequest,
+  signal: AbortSignal,
+): Promise<string> {
   if (pr.forge === "github") {
     const repo = await forgeApi("gh", pr.host, `repos/${pr.project}`, signal);
 
     return Value.Parse(GitHubRepoSchema, repo).default_branch;
   }
 
-  const project = await forgeApi("glab", pr.host, `projects/${encodeURIComponent(pr.project)}`, signal);
+  const project = await forgeApi(
+    "glab",
+    pr.host,
+    `projects/${encodeURIComponent(pr.project)}`,
+    signal,
+  );
 
   return Value.Parse(GitLabProjectSchema, project).default_branch;
 }
@@ -262,7 +279,12 @@ async function openReviews(
       query.set("base", branches.target);
     }
 
-    const pulls = await forgeApi("gh", pr.host, `repos/${pr.project}/pulls?${query}`, signal);
+    const pulls = await forgeApi(
+      "gh",
+      pr.host,
+      `repos/${pr.project}/pulls?${query}`,
+      signal,
+    );
 
     return Value.Parse(GitHubPullListSchema, pulls).map((pull) => {
       return {
@@ -295,18 +317,20 @@ async function openReviews(
     signal,
   );
 
-  return Value.Parse(GitLabMergeRequestListSchema, mergeRequests).map((mergeRequest) => {
-    return {
-      pr: {
-        ...pr,
-        url: mergeRequest.web_url,
-        number: String(mergeRequest.iid),
-      },
-      title: mergeRequest.title,
-      source: mergeRequest.source_branch,
-      target: mergeRequest.target_branch,
-    };
-  });
+  return Value.Parse(GitLabMergeRequestListSchema, mergeRequests).map(
+    (mergeRequest) => {
+      return {
+        pr: {
+          ...pr,
+          url: mergeRequest.web_url,
+          number: String(mergeRequest.iid),
+        },
+        title: mergeRequest.title,
+        source: mergeRequest.source_branch,
+        target: mergeRequest.target_branch,
+      };
+    },
+  );
 }
 
 async function soleOpenReview(
@@ -342,10 +366,7 @@ export async function pullRequestStack(
   const defaultBranch = await forgeDefaultBranch(pr, signal);
   let bottom = linked;
 
-  while (
-    frames.length < MAX_STACK_FRAMES &&
-    bottom.target !== defaultBranch
-  ) {
+  while (frames.length < MAX_STACK_FRAMES && bottom.target !== defaultBranch) {
     const parent = await soleOpenReview(pr, { source: bottom.target }, signal);
 
     if (!parent) {
@@ -387,10 +408,21 @@ export async function checkoutPullRequest(
     const staging = `${repo}.${randomUUID()}`;
 
     try {
-      await execFileAsync("git", ["clone", "--bare", "--quiet", "--filter=blob:none", info.cloneUrl, staging], {
-        signal,
-        timeout: PR_CLONE_TIMEOUT_MS,
-      });
+      await execFileAsync(
+        "git",
+        [
+          "clone",
+          "--bare",
+          "--quiet",
+          "--filter=blob:none",
+          info.cloneUrl,
+          staging,
+        ],
+        {
+          signal,
+          timeout: PR_CLONE_TIMEOUT_MS,
+        },
+      );
       await rename(staging, repo);
     } catch (error) {
       await rm(staging, { recursive: true, force: true });
@@ -403,15 +435,27 @@ export async function checkoutPullRequest(
 
   // The bottom frame targets the default branch in a complete stack, and the leaf holds every frame's changes.
   const baseBranch = frames[0]?.target ?? info.baseBranch;
-  const headRefs = frames.map((frame) => `refs/pr-review/${frame.pr.number}/head`);
+  const headRefs = frames.map(
+    (frame) => `refs/pr-review/${frame.pr.number}/head`,
+  );
   const baseRef = `refs/pr-review/${pr.number}/base`;
-  const refspecs = frames.map((frame, i) => `+${forgeHeadRef(frame.pr)}:${headRefs[i]}`);
+  const refspecs = frames.map(
+    (frame, i) => `+${forgeHeadRef(frame.pr)}:${headRefs[i]}`,
+  );
   await git(
     repo,
-    ["fetch", "--quiet", "origin", ...refspecs, `+refs/heads/${baseBranch}:${baseRef}`],
+    [
+      "fetch",
+      "--quiet",
+      "origin",
+      ...refspecs,
+      `+refs/heads/${baseBranch}:${baseRef}`,
+    ],
     { signal },
   );
-  const heads = await Promise.all(headRefs.map((ref) => git(repo, ["rev-parse", ref], { signal })));
+  const heads = await Promise.all(
+    headRefs.map((ref) => git(repo, ["rev-parse", ref], { signal })),
+  );
   const head = heads.at(-1);
 
   if (!head) {
@@ -419,11 +463,15 @@ export async function checkoutPullRequest(
   }
 
   const mergeBase = await git(repo, ["merge-base", head, baseRef], { signal });
-  const base = await git(repo, ["rev-parse", `${mergeBase}^{tree}`], { signal });
+  const base = await git(repo, ["rev-parse", `${mergeBase}^{tree}`], {
+    signal,
+  });
   const current = await git(repo, ["rev-parse", `${head}^{tree}`], { signal });
 
   const path = join(tmpdir(), `pi-pr-review-${randomUUID()}`);
-  await git(repo, ["worktree", "add", "--detach", "--quiet", path, head], { signal });
+  await git(repo, ["worktree", "add", "--detach", "--quiet", path, head], {
+    signal,
+  });
 
   try {
     return {
@@ -438,8 +486,12 @@ export async function checkoutPullRequest(
         current,
         paths: [],
         formatters: [],
-        files: await git(path, ["diff", "--name-status", base, current], { signal }),
-        lines: countLines(await git(path, ["diff", "--numstat", base, current], { signal })),
+        files: await git(path, ["diff", "--name-status", base, current], {
+          signal,
+        }),
+        lines: countLines(
+          await git(path, ["diff", "--numstat", base, current], { signal }),
+        ),
       },
     };
   } catch (error) {
@@ -448,7 +500,10 @@ export async function checkoutPullRequest(
   }
 }
 
-function stackSection(frames: StackFrame[], checkout: PullRequestCheckout): string {
+function stackSection(
+  frames: StackFrame[],
+  checkout: PullRequestCheckout,
+): string {
   const rows = frames.map((frame, i) => {
     const parent = i === 0 ? checkout.mergeBase : checkout.heads[i - 1];
 

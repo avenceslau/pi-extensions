@@ -2,7 +2,12 @@ export type Forge = "github" | "gitlab";
 
 export type ReviewStatus = "actionable" | "waiting" | "ready";
 
-export type ShepherdPhase = "idle" | "working" | "reviewing" | "reviewed" | "blocked";
+export type ShepherdPhase =
+  | "idle"
+  | "working"
+  | "reviewing"
+  | "reviewed"
+  | "blocked";
 
 export interface WorktreeRecord {
   path: string;

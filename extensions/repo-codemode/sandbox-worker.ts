@@ -1,78 +1,126 @@
+import { createRequire } from "node:module";
 import { parentPort, workerData } from "node:worker_threads";
-import variant from "@jitl/quickjs-ng-wasmfile-release-asyncify";
 import { loadAsyncQuickJs } from "@sebastianwessel/quickjs";
+import {
+  Boolean,
+  Object as ObjectType,
+  Optional,
+  String as StringType,
+  Union,
+} from "typebox";
+import { Check } from "typebox/value";
 
-if (!parentPort) {
-	throw new Error("repo_execute sandbox worker requires a parent port");
-}
+type HostArgument = string | number | boolean | undefined;
+type HostValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | HostValue[]
+  | { [key: string]: HostValue };
 
-const pending = new Map();
-let nextCallId = 1;
-
-parentPort.on("message", (message) => {
-	if (message?.type !== "callResult" || typeof message.id !== "number") {
-		return;
-	}
-
-	const call = pending.get(message.id);
-
-	if (!call) {
-		return;
-	}
-
-	pending.delete(message.id);
-
-	if (typeof message.error === "string") {
-		call.reject(new Error(message.error));
-	} else {
-		call.resolve(message.result);
-	}
-});
-
-const call = (method, args) =>
-	new Promise((resolve, reject) => {
-		const id = nextCallId++;
-		pending.set(id, { resolve, reject });
-		parentPort.postMessage({ type: "call", id, method, args });
-	});
-
-const hostRepo = {
-	list: (...args) => call("list", args),
-	info: (...args) => call("info", args),
-	search: (...args) => call("search", args),
-	files: (...args) => call("files", args),
-	grep: (...args) => call("grep", args),
-	read: (...args) => call("read", args),
-	clone: (...args) => call("clone", args),
+type CallResultMessage = {
+  type: "callResult";
+  id: number;
+  result?: HostValue;
+  error?: string;
 };
 
-const boundedError = (error) => {
-	let name = "Error";
-	let message = "Sandbox execution failed";
+type PendingCall = {
+  resolve: (value: HostValue) => void;
+  reject: (reason: Error) => void;
+};
 
-	try {
-		if (typeof error?.name === "string") {
-			name = error.name.slice(0, 100);
-		}
+const ErrorDetailsType = ObjectType({
+  name: Optional(StringType()),
+  message: Optional(StringType()),
+});
 
-		if (typeof error?.message === "string") {
-			message = error.message.slice(0, 4096);
-		}
-	} catch {}
+const SandboxOutputType = Union([
+  ObjectType({
+    text: StringType(),
+    guestTruncated: Boolean(),
+  }),
+  ObjectType({
+    sandboxError: ErrorDetailsType,
+  }),
+]);
 
-	return `${name}: ${message}`;
+const require = createRequire(import.meta.url);
+const quickJsVariant: Parameters<
+  typeof loadAsyncQuickJs
+>[0] = require("@jitl/quickjs-ng-wasmfile-release-asyncify");
+const port = parentPort;
+
+if (!port) {
+  throw new Error("repo_execute sandbox worker requires a parent port");
+}
+
+const code: string = workerData.code;
+const pending = new Map<number, PendingCall>();
+let nextCallId = 1;
+
+port.on("message", (message: CallResultMessage) => {
+  if (message?.type !== "callResult" || typeof message.id !== "number") {
+    return;
+  }
+
+  const call = pending.get(message.id);
+
+  if (!call) {
+    return;
+  }
+
+  pending.delete(message.id);
+
+  if (typeof message.error === "string") {
+    call.reject(new Error(message.error));
+  } else {
+    call.resolve(message.result);
+  }
+});
+
+const call = (method: string, args: HostArgument[]) =>
+  new Promise<HostValue>((resolve, reject) => {
+    const id = nextCallId++;
+    pending.set(id, { resolve, reject });
+    port.postMessage({ type: "call", id, method, args });
+  });
+
+const hostRepo = {
+  list: () => call("list", []),
+  info: (id: string) => call("info", [id]),
+  search: (query: string, remote = false) => call("search", [query, remote]),
+  files: (id: string, glob?: string) => call("files", [id, glob]),
+  grep: (id: string, query: string, glob?: string) =>
+    call("grep", [id, query, glob]),
+  read: (id: string, path: string, start?: number, lines?: number) =>
+    call("read", [id, path, start, lines]),
+  clone: (project: string, dest?: string) => call("clone", [project, dest]),
+};
+
+const boundedError = (error: unknown) => {
+  if (!Check(ErrorDetailsType, error)) {
+    return "Error: Sandbox execution failed";
+  }
+
+  const name = (error.name ?? "Error").slice(0, 100);
+  const message = (error.message ?? "Sandbox execution failed").slice(0, 4096);
+
+  return `${name}: ${message}`;
 };
 
 try {
-	const { runSandboxed } = await loadAsyncQuickJs(variant);
+  const { runSandboxed } = await loadAsyncQuickJs(quickJsVariant);
 
-	const result = await runSandboxed(
-		async ({ ctx, evalCode }) => {
-			ctx.runtime.setModuleLoader(() => {
-				throw new Error("Imports are disabled in repo_execute");
-			});
+  const result = await runSandboxed(
+    async ({ ctx, evalCode }) => {
+      ctx.runtime.setModuleLoader(() => {
+        throw new Error("Imports are disabled in repo_execute");
+      });
 
-			return evalCode(`
+      return evalCode(`
 const repo = ((host) => {
   const string = (value, name, optional = false) => {
     if (optional && value === undefined) {
@@ -121,7 +169,7 @@ let output;
 try {
   const value = await (async () => {
     "use strict";
-${workerData.code}
+${code}
   })();
   let text;
   if (typeof value === "string") {
@@ -149,32 +197,43 @@ ${workerData.code}
 }
 export default output;
 `);
-		},
-		{
-			allowFetch: false,
-			allowFs: false,
-			env: { repo: hostRepo },
-			memoryLimit: 32 * 1024 * 1024,
-			maxStackSize: 512 * 1024,
-			maxTimeoutCount: 2,
-			maxIntervalCount: 0,
-			console: {
-				log: () => {},
-				error: () => {},
-				warn: () => {},
-				info: () => {},
-				debug: () => {},
-			},
-		},
-	);
+    },
+    {
+      allowFetch: false,
+      allowFs: false,
+      env: { repo: hostRepo },
+      memoryLimit: 32 * 1024 * 1024,
+      maxStackSize: 512 * 1024,
+      maxTimeoutCount: 2,
+      maxIntervalCount: 0,
+      console: {
+        log: () => {},
+        error: () => {},
+        warn: () => {},
+        info: () => {},
+        debug: () => {},
+      },
+    },
+  );
 
-	if (!result.ok) {
-		parentPort.postMessage({ type: "done", error: `${result.error.name}: ${result.error.message}`.slice(0, 4096) });
-	} else if (result.data?.sandboxError) {
-		parentPort.postMessage({ type: "done", error: boundedError(result.data.sandboxError) });
-	} else {
-		parentPort.postMessage({ type: "done", result: result.data });
-	}
+  if (!result.ok) {
+    port.postMessage({
+      type: "done",
+      error: `${result.error.name}: ${result.error.message}`.slice(0, 4096),
+    });
+  } else if (!Check(SandboxOutputType, result.data)) {
+    port.postMessage({
+      type: "done",
+      error: "repo_execute returned an invalid sandbox result",
+    });
+  } else if ("sandboxError" in result.data) {
+    port.postMessage({
+      type: "done",
+      error: boundedError(result.data.sandboxError),
+    });
+  } else {
+    port.postMessage({ type: "done", result: result.data });
+  }
 } catch (error) {
-	parentPort.postMessage({ type: "done", error: boundedError(error) });
+  port.postMessage({ type: "done", error: boundedError(error) });
 }

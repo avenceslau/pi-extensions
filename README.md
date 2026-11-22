@@ -13,10 +13,16 @@ Run `/reload` in Pi after updating the package.
 
 ## Development
 
-`npm run check` runs the extension and Worker tests, applies the vendored anti-slop rules to all owned TypeScript,
-and runs the Worker's Oxfmt, Durability lint and TSRS checks. The anti-slop warning ceiling prevents the current
-migration baseline from growing; `npm run lint:report` prints those findings. Readable-spacing and Worker durability
-rules already fail immediately.
+```sh
+npm ci
+npm ci --prefix workers/clef
+npm run check
+```
+
+`npm run check` runs Oxfmt, TSRS, the extension and Worker tests, repo-wide anti-slop rules, and the Worker's
+Durability rules. The anti-slop warning ceiling prevents the current migration baseline from growing;
+`npm run lint:report` prints those findings. Durability violations fail immediately. CI runs format, lint,
+type-checking and tests as separate workflows.
 
 ## Host your own Clef endpoint
 
@@ -33,7 +39,9 @@ The Worker denies requests until you finish the documented Access setup.
 contributes by listening on the `pi-extensions:config` event and calling `contribute`:
 
 ```ts
-pi.events.on("pi-extensions:config", (request) => request.contribute({ forges: { "git.example.com": "gitlab" } }));
+pi.events.on("pi-extensions:config", (request) =>
+  request.contribute({ forges: { "git.example.com": "gitlab" } }),
+);
 ```
 
 The user config is a TypeScript module whose default export is the config, typed by `PiExtensionsConfig` from
@@ -46,7 +54,10 @@ import type { PiExtensionsConfig } from "./git/github.com/avenceslau/pi-extensio
 export default {
   clef: {
     url: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/cloudflare/clef`,
-    auth: { header: "authorization", token: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` },
+    auth: {
+      header: "authorization",
+      token: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+    },
   },
   models: {
     primary: ["provider/model-a", "provider/model-b"],
@@ -166,9 +177,16 @@ audit emits each time it starts:
 
 ```ts
 pi.events.on("post-change-audit:contributions", (request) => {
-  request.addAuditor({ type: "security-review", title: "Security", idPrefix: "SX", focus: "Audit the changes for injection." });
+  request.addAuditor({
+    type: "security-review",
+    title: "Security",
+    idPrefix: "SX",
+    focus: "Audit the changes for injection.",
+  });
   request.addCorrectnessContext(async (change, { signal, notify }) => ({
-    lines: [`Test worktree: ${await makeWorktree(change.root, change.current, signal)}`],
+    lines: [
+      `Test worktree: ${await makeWorktree(change.root, change.current, signal)}`,
+    ],
     instructions: "List every test run URL with its result in batches.",
     release: async () => removeWorktree(),
   }));

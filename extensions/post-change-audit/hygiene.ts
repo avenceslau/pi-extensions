@@ -1,4 +1,8 @@
-import { lint, type HygieneDiagnostic, type LintResult } from "../hygiene/lint.ts";
+import {
+  lint,
+  type HygieneDiagnostic,
+  type LintResult,
+} from "../hygiene/lint.ts";
 import type { ClefConfig } from "../shared/config.ts";
 import type { ReviewedComment } from "./comment-review.ts";
 import type { AuditorResult, FindingsReport } from "./findings.ts";
@@ -16,7 +20,8 @@ const REFACTOR_RULE = /^refactor\//;
 // A reviewer finding whose rule names one of these families repeats a hygiene finding of the family on the same lines.
 const REPEAT_FAMILIES = [
   {
-    reviewerRule: /nest|tangl|cognitive|complex|responsibilit|long (?:function|method)/i,
+    reviewerRule:
+      /nest|tangl|cognitive|complex|responsibilit|long (?:function|method)/i,
     hygieneRules: new Set([
       "refactor/tangled-branching",
       "refactor/mixed-responsibilities",
@@ -48,7 +53,11 @@ interface Span {
 }
 
 // Fix rounds are linted on the hunks since the previous audit only, the hunks the reviewers are told to report on.
-async function lintChange(change: RepoChange, clef: ClefConfig | undefined, signal: AbortSignal): Promise<LintResult> {
+async function lintChange(
+  change: RepoChange,
+  clef: ClefConfig | undefined,
+  signal: AbortSignal,
+): Promise<LintResult> {
   const from = change.previous ?? change.base;
   const pathspec = change.paths.length > 0 ? ["--", ...change.paths] : [];
 
@@ -71,9 +80,15 @@ async function lintChange(change: RepoChange, clef: ClefConfig | undefined, sign
   });
 }
 
-function toReport(diagnostics: HygieneDiagnostic[], notices: string[]): FindingsReport {
+function toReport(
+  diagnostics: HygieneDiagnostic[],
+  notices: string[],
+): FindingsReport {
   const findings = diagnostics.map((diagnostic, index) => {
-    const judged = diagnostic.probability === undefined ? "" : ` (Clef ${diagnostic.probability.toFixed(2)})`;
+    const judged =
+      diagnostic.probability === undefined
+        ? ""
+        : ` (Clef ${diagnostic.probability.toFixed(2)})`;
 
     return {
       id: String(index + 1),
@@ -95,7 +110,11 @@ function toReport(diagnostics: HygieneDiagnostic[], notices: string[]): Findings
   };
 }
 
-function hygieneResult(idPrefix: string, diagnostics: HygieneDiagnostic[], notices: string[]): AuditorResult {
+function hygieneResult(
+  idPrefix: string,
+  diagnostics: HygieneDiagnostic[],
+  notices: string[],
+): AuditorResult {
   return {
     source: "hygiene",
     title: "Hygiene",
@@ -114,7 +133,9 @@ export async function hygieneAudit(
   let results: LintResult[];
 
   try {
-    results = await Promise.all(changes.map((change) => lintChange(change, clef, signal)));
+    results = await Promise.all(
+      changes.map((change) => lintChange(change, clef, signal)),
+    );
   } catch (error) {
     return {
       results: [
@@ -138,7 +159,9 @@ export async function hygieneAudit(
     results: [
       hygieneResult(
         "CR",
-        diagnostics.filter((diagnostic) => !REFACTOR_RULE.test(diagnostic.rule)),
+        diagnostics.filter(
+          (diagnostic) => !REFACTOR_RULE.test(diagnostic.rule),
+        ),
         results.flatMap((result) => result.notices),
       ),
       hygieneResult(
@@ -149,23 +172,33 @@ export async function hygieneAudit(
     ],
     diagnostics,
     comments: results.flatMap((result, index) => {
-      return result.comments.map((comment) => ({ ...comment, root: changes[index].root }));
+      return result.comments.map((comment) => ({
+        ...comment,
+        root: changes[index].root,
+      }));
     }),
     clefReachable: results.every((result) => result.clef === "ok"),
   };
 }
 
-function lineList(spans: { line: number; endLine: number; rule?: string }[]): string {
+function lineList(
+  spans: { line: number; endLine: number; rule?: string }[],
+): string {
   return spans
     .map((span) => {
-      const lines = span.endLine > span.line ? `${span.line}-${span.endLine}` : `${span.line}`;
+      const lines =
+        span.endLine > span.line
+          ? `${span.line}-${span.endLine}`
+          : `${span.line}`;
 
       return span.rule ? `${lines} ${span.rule}` : lines;
     })
     .join(", ");
 }
 
-function byFile<Entry extends { file: string }>(entries: Entry[]): Map<string, Entry[]> {
+function byFile<Entry extends { file: string }>(
+  entries: Entry[],
+): Map<string, Entry[]> {
   const files = new Map<string, Entry[]>();
 
   for (const entry of entries) {
@@ -186,13 +219,19 @@ export function reportedSection(hygiene: HygieneAudit): string {
     })),
   );
 
-  const comments = byFile(hygiene.comments.map((comment) => ({ ...comment, file: comment.path })));
-  const lines = ["Do not review comments at all: comment-review judges every comment this change added or left next to edited code."];
+  const comments = byFile(
+    hygiene.comments.map((comment) => ({ ...comment, file: comment.path })),
+  );
+  const lines = [
+    "Do not review comments at all: comment-review judges every comment this change added or left next to edited code.",
+  ];
 
   if (diagnostics.size > 0) {
     lines.push(
       "Already reported by the hygiene linter; do not repeat these, or report the same problem on the same lines:",
-      ...[...diagnostics].map(([file, spans]) => `- ${file}: ${lineList(spans)}`),
+      ...[...diagnostics].map(
+        ([file, spans]) => `- ${file}: ${lineList(spans)}`,
+      ),
     );
   }
 
@@ -207,23 +246,36 @@ export function reportedSection(hygiene: HygieneAudit): string {
 }
 
 function overlaps(span: Span, other: Span): boolean {
-  return span.file === other.file && span.line <= other.endLine && other.line <= span.endLine;
+  return (
+    span.file === other.file &&
+    span.line <= other.endLine &&
+    other.line <= span.endLine
+  );
 }
 
 function repeatedSpans(rule: string, hygiene: HygieneAudit): Span[] {
   if (COMMENT_FAMILY.test(rule)) {
-    return hygiene.comments.map((comment) => ({ ...comment, file: comment.path }));
+    return hygiene.comments.map((comment) => ({
+      ...comment,
+      file: comment.path,
+    }));
   }
 
   const family = REPEAT_FAMILIES.find((entry) => entry.reviewerRule.test(rule));
 
   return hygiene.diagnostics
     .filter((diagnostic) => family?.hygieneRules.has(diagnostic.rule))
-    .map((diagnostic) => ({ ...diagnostic, endLine: diagnostic.endLine ?? diagnostic.line }));
+    .map((diagnostic) => ({
+      ...diagnostic,
+      endLine: diagnostic.endLine ?? diagnostic.line,
+    }));
 }
 
 // Drops refactor-review findings about complexity, duplication or comments on lines where hygiene already reported the same family.
-export function withoutRepeats(result: AuditorResult, hygiene: HygieneAudit): AuditorResult {
+export function withoutRepeats(
+  result: AuditorResult,
+  hygiene: HygieneAudit,
+): AuditorResult {
   if (!result.report) {
     return result;
   }
@@ -237,7 +289,9 @@ export function withoutRepeats(result: AuditorResult, hygiene: HygieneAudit): Au
       endLine: finding.endLine ?? finding.line,
     };
 
-    const repeated = repeatedSpans(finding.rule, hygiene).some((other) => overlaps(span, other));
+    const repeated = repeatedSpans(finding.rule, hygiene).some((other) =>
+      overlaps(span, other),
+    );
 
     if (repeated) {
       dropped.push(`${finding.file}:${finding.line} ${finding.rule}`);

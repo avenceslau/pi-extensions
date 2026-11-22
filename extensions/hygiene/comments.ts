@@ -1,4 +1,10 @@
-import { mergeLineComments, type Analysis, type Comment, type FunctionInfo, type Span } from "./analysis.ts";
+import {
+  mergeLineComments,
+  type Analysis,
+  type Comment,
+  type FunctionInfo,
+  type Span,
+} from "./analysis.ts";
 import { countAdded, type ChangedFile } from "./diff.ts";
 
 // How much of the code around a comment its candidate shows; the reviewer can read the file for more.
@@ -98,7 +104,11 @@ function stringEnd(source: string, start: number): number {
   return source.length;
 }
 
-function lineCommentStarts(source: string, index: number, syntax: CommentSyntax): boolean {
+function lineCommentStarts(
+  source: string,
+  index: number,
+  syntax: CommentSyntax,
+): boolean {
   if (!source.startsWith(syntax.line, index)) {
     return false;
   }
@@ -173,18 +183,18 @@ export function lexComments(path: string, source: string): Comment[] {
 }
 
 // The outermost statement that starts on the comment's last line or the line after it.
-function statementBelow(comment: Comment, statements: Span[]): Span | undefined {
+function statementBelow(
+  comment: Comment,
+  statements: Span[],
+): Span | undefined {
   let below: Span | undefined;
 
   for (const statement of statements) {
-    const startsNext = statement.line >= comment.line && statement.line <= comment.endLine + 1;
+    const startsNext =
+      statement.line >= comment.line && statement.line <= comment.endLine + 1;
     const longer = !below || statement.endLine > below.endLine;
 
-    if (
-      startsNext &&
-      statement.endLine > comment.endLine &&
-      longer
-    ) {
+    if (startsNext && statement.endLine > comment.endLine && longer) {
       below = statement;
     }
   }
@@ -196,8 +206,10 @@ function innermostAround(comment: Comment, spans: Span[]): Span | undefined {
   let around: Span | undefined;
 
   for (const span of spans) {
-    const encloses = span.line < comment.line && span.endLine >= comment.endLine;
-    const shorter = !around || span.endLine - span.line < around.endLine - around.line;
+    const encloses =
+      span.line < comment.line && span.endLine >= comment.endLine;
+    const shorter =
+      !around || span.endLine - span.line < around.endLine - around.line;
 
     if (encloses && shorter) {
       around = span;
@@ -208,10 +220,14 @@ function innermostAround(comment: Comment, spans: Span[]): Span | undefined {
 }
 
 // The enclosing function or block and the statement under the comment, clamped around the comment.
-function commentContext(comment: Comment, analysis: Analysis | undefined): LineRange {
+function commentContext(
+  comment: Comment,
+  analysis: Analysis | undefined,
+): LineRange {
   const functions: FunctionInfo[] = analysis?.functions ?? [];
   const statements = analysis?.statements ?? [];
-  const around = innermostAround(comment, functions) ?? innermostAround(comment, statements);
+  const around =
+    innermostAround(comment, functions) ?? innermostAround(comment, statements);
   const below = statementBelow(comment, statements);
   const scopeStart = around?.line ?? comment.line;
 
@@ -252,14 +268,23 @@ function staleContext(
   const around = innermostAround(comment, analysis.statements);
 
   const statement =
-    below ?? (around && around.endLine - around.line < STALE_COMMENT_MAX_STATEMENT_LINES ? around : undefined);
+    below ??
+    (around && around.endLine - around.line < STALE_COMMENT_MAX_STATEMENT_LINES
+      ? around
+      : undefined);
 
   if (!statement) {
     return undefined;
   }
 
-  const start = Math.max(statement.line, comment.line - COMMENT_CONTEXT_BEFORE_LINES);
-  const end = Math.min(statement.endLine, comment.endLine + COMMENT_CONTEXT_AFTER_LINES);
+  const start = Math.max(
+    statement.line,
+    comment.line - COMMENT_CONTEXT_BEFORE_LINES,
+  );
+  const end = Math.min(
+    statement.endLine,
+    comment.endLine + COMMENT_CONTEXT_AFTER_LINES,
+  );
   const edited: number[] = [];
 
   for (let line = start; line <= end; line += 1) {
@@ -317,7 +342,10 @@ export function commentCandidates(
       continue;
     }
 
-    const stale = analysis && file.status !== "A" ? staleContext(comment, file, analysis) : undefined;
+    const stale =
+      analysis && file.status !== "A"
+        ? staleContext(comment, file, analysis)
+        : undefined;
 
     if (stale) {
       candidates.push({

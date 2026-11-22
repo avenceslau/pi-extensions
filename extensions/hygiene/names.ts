@@ -53,7 +53,18 @@ const PLACEHOLDER_WORDS = new Set([
 ]);
 
 // Words that add nothing to a placeholder: `myData`, `newValue` and `doStuff` are as empty as `data`.
-const FILLER_WORDS = new Set(["the", "an", "my", "new", "old", "some", "other", "do", "get", "set"]);
+const FILLER_WORDS = new Set([
+  "the",
+  "an",
+  "my",
+  "new",
+  "old",
+  "some",
+  "other",
+  "do",
+  "get",
+  "set",
+]);
 
 const QUANTITY_WORDS = new Set([
   "age",
@@ -235,7 +246,11 @@ export function isPlaceholderName(name: string): boolean {
 }
 
 function hasUnit(words: string[]): boolean {
-  return words.some((word) => UNIT_WORDS.has(word) || (word.length >= MIN_PLURAL_CHARS && PLURAL.test(word)));
+  return words.some(
+    (word) =>
+      UNIT_WORDS.has(word) ||
+      (word.length >= MIN_PLURAL_CHARS && PLURAL.test(word)),
+  );
 }
 
 function readsAsPredicate(words: string[]): boolean {
@@ -244,7 +259,12 @@ function readsAsPredicate(words: string[]): boolean {
 
   return (
     PREDICATE_PREFIXES.has(first) ||
-    [first, last].some((word) => ADJECTIVES.has(word) || (word.length >= MIN_SUFFIXED_ADJECTIVE_CHARS && ADJECTIVE_SUFFIX.test(word)))
+    [first, last].some(
+      (word) =>
+        ADJECTIVES.has(word) ||
+        (word.length >= MIN_SUFFIXED_ADJECTIVE_CHARS &&
+          ADJECTIVE_SUFFIX.test(word)),
+    )
   );
 }
 
@@ -258,9 +278,17 @@ export function genericNameProblem(identifier: Identifier): string | undefined {
   }
 
   const quantity = words.some((word) => QUANTITY_WORDS.has(word));
-  const constant = identifier.constant || identifier.kind === "const" || /^[A-Z][A-Z0-9_]+$/.test(name);
+  const constant =
+    identifier.constant ||
+    identifier.kind === "const" ||
+    /^[A-Z][A-Z0-9_]+$/.test(name);
 
-  if (constant && identifier.valueType === "number" && quantity && !hasUnit(words)) {
+  if (
+    constant &&
+    identifier.valueType === "number" &&
+    quantity &&
+    !hasUnit(words)
+  ) {
     return `\`${name}\` holds a time, size or count but its name has no unit.`;
   }
 
@@ -275,7 +303,11 @@ export function genericNameProblem(identifier: Identifier): string | undefined {
 export function usefulSuggestion(identifier: Identifier): string | undefined {
   const { suggestion } = identifier;
 
-  if (!suggestion || suggestion === identifier.name || isPlaceholderName(suggestion)) {
+  if (
+    !suggestion ||
+    suggestion === identifier.name ||
+    isPlaceholderName(suggestion)
+  ) {
     return undefined;
   }
 

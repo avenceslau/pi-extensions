@@ -123,12 +123,12 @@ After review, **stop at "ready to merge"**. Do not run `glab mr merge` (Hard Rul
 
 ## What `glab` does not handle well
 
-| Need | Workaround |
-|---|---|
+| Need                              | Workaround                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------- |
 | Diff-anchored positional comments | `glab api` to `/merge_requests/<iid>/discussions` with `position[...]` fields |
-| Resolving threads | `glab api -X PUT .../discussions/<id>?resolved=true` |
-| Replying within a thread | `glab api -X POST .../discussions/<discussion_id>/notes` |
-| Merging | **Don't** — Hard Rule #1 |
+| Resolving threads                 | `glab api -X PUT .../discussions/<id>?resolved=true`                          |
+| Replying within a thread          | `glab api -X POST .../discussions/<discussion_id>/notes`                      |
+| Merging                           | **Don't** — Hard Rule #1                                                      |
 
 When you find yourself reaching for `glab api`, fetch the GitLab API docs first:
 https://docs.gitlab.com/api/merge_requests/

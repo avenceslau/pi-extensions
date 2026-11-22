@@ -15,7 +15,10 @@ const SEVERITY_RANK: Record<Severity, number> = {
 
 const VALUE_FLAGS = new Set(["--diff", "--root", "--fail-on"]);
 
-function parseArgs(args: string[]): { flags: Map<string, string>; paths: string[] } {
+function parseArgs(args: string[]): {
+  flags: Map<string, string>;
+  paths: string[];
+} {
   const flags = new Map<string, string>();
   const paths: string[] = [];
 
@@ -40,7 +43,9 @@ const diffFile = flags.get("--diff");
 const failOn = (flags.get("--fail-on") || "warning") as Severity;
 
 if (!(failOn in SEVERITY_RANK)) {
-  console.error(`hygiene: --fail-on must be error, warning, or info, not ${failOn}`);
+  console.error(
+    `hygiene: --fail-on must be error, warning, or info, not ${failOn}`,
+  );
   process.exit(2);
 }
 
@@ -51,7 +56,10 @@ if (diffFile === undefined && paths.length === 0) {
 
 const result = await lint({
   root: flags.get("--root") || (await repositoryRoot(process.cwd())),
-  diffText: diffFile === undefined ? undefined : readFileSync(diffFile === "-" ? 0 : diffFile, "utf8"),
+  diffText:
+    diffFile === undefined
+      ? undefined
+      : readFileSync(diffFile === "-" ? 0 : diffFile, "utf8"),
   paths,
   clef: flags.has("--no-clef") ? undefined : (await readUserConfig()).clef,
 });
@@ -63,6 +71,8 @@ if (flags.has("--json")) {
 }
 
 if (flags.has("--check")) {
-  const failing = result.diagnostics.some((diagnostic) => SEVERITY_RANK[diagnostic.severity] >= SEVERITY_RANK[failOn]);
+  const failing = result.diagnostics.some(
+    (diagnostic) => SEVERITY_RANK[diagnostic.severity] >= SEVERITY_RANK[failOn],
+  );
   process.exit(failing ? 1 : 0);
 }

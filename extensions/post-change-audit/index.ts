@@ -4,7 +4,10 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
@@ -14,7 +17,11 @@ import {
   serializeAuditMessage,
   type AuditMessageInput,
 } from "./audit-message.ts";
-import { askClef, type ClefAnswers, type ClefQuestion } from "../shared/clef.ts";
+import {
+  askClef,
+  type ClefAnswers,
+  type ClefQuestion,
+} from "../shared/clef.ts";
 import { loadConfig, type ClefConfig } from "../shared/config.ts";
 import {
   AuditDecisionSchema,
@@ -70,7 +77,8 @@ const COMMENT_AUDITOR: Auditor = {
   type: "comment-review",
   title: "Comments",
   idPrefix: "CM",
-  focus: "Judge each comment below against the comment rule. Do not edit files.",
+  focus:
+    "Judge each comment below against the comment rule. Do not edit files.",
 };
 
 // refactor-review always runs: on 20 recorded audits, a gate on the linter's diagnostics and the change size had to
@@ -141,13 +149,16 @@ const FORMAT_TIMEOUT_MS = 60_000;
 const DIFF_SCOPE_RULE =
   "The diff commands above already compare against the right base. Never diff against origin/main or any other ref yourself.";
 
-const AGENT_AUDIT_INTRO = "Audit only the changes an agent just made. Do not edit files.";
-const AGENT_CORRECTNESS_INTRO = "Review the correctness of the changes an agent just made.";
+const AGENT_AUDIT_INTRO =
+  "Audit only the changes an agent just made. Do not edit files.";
+const AGENT_CORRECTNESS_INTRO =
+  "Review the correctness of the changes an agent just made.";
 
 const AUTOMATIC_CORRECTNESS_RULE =
   "Review by reading and reasoning only: do not write or run tests, and start no simulations. /correctness does those.";
 
-const MANUAL_CORRECTNESS_INTRO = "The user ran /correctness to review the correctness of these changes.";
+const MANUAL_CORRECTNESS_INTRO =
+  "The user ran /correctness to review the correctness of these changes.";
 
 const REPORT_INSTRUCTIONS = [
   "Call report_findings exactly once at the end, with every finding or with clean set to true and no findings. Only that report is read; your final message is not.",
@@ -169,7 +180,8 @@ const PR_AUDITORS: LintedAuditors = {
     type: "code-restraint-review",
     title: "Code restraint",
     idPrefix: "CR",
-    focus: "Audit the changes against the code-restraint skill: comment density and duplication, premature abstraction and one-consumer modules, misplaced code, dense one-liners, and limits with no stated basis.",
+    focus:
+      "Audit the changes against the code-restraint skill: comment density and duplication, premature abstraction and one-consumer modules, misplaced code, dense one-liners, and limits with no stated basis.",
   },
 };
 
@@ -265,7 +277,12 @@ async function correctnessRisk(
     }),
   );
 
-  return askClef(clef, diffs.join("\n\n"), { risky: CLEF_RISK_QUESTION }, signal);
+  return askClef(
+    clef,
+    diffs.join("\n\n"),
+    { risky: CLEF_RISK_QUESTION },
+    signal,
+  );
 }
 
 function isAuditHub(value: unknown): value is AuditHub {
@@ -311,7 +328,12 @@ function repoSection(change: RepoChange): string[] {
   return lines;
 }
 
-function auditPrompt(focus: string, changes: RepoChange[], intro: string, reported?: string): string {
+function auditPrompt(
+  focus: string,
+  changes: RepoChange[],
+  intro: string,
+  reported?: string,
+): string {
   return [
     intro,
     focus,
@@ -401,7 +423,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     touchPaths(root, paths);
   }
 
-  async function recordStatesBeforeBash(toolCallId: string, cwd: string): Promise<void> {
+  async function recordStatesBeforeBash(
+    toolCallId: string,
+    cwd: string,
+  ): Promise<void> {
     const cwdRoot = await repoRoot(cwd);
 
     if (cwdRoot) {
@@ -434,7 +459,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     }
   }
 
-  function runAuditor(run: AuditorRun, signal: AbortSignal): Promise<AuditorResult> {
+  function runAuditor(
+    run: AuditorRun,
+    signal: AbortSignal,
+  ): Promise<AuditorResult> {
     return new Promise((resolveResult) => {
       const finish = (outcome: AuditorOutcome) => {
         resolveResult({
@@ -445,28 +473,42 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
         });
       };
 
-      signal.addEventListener("abort", () => finish({ ok: false, text: "aborted" }), { once: true });
+      signal.addEventListener(
+        "abort",
+        () => finish({ ok: false, text: "aborted" }),
+        { once: true },
+      );
       const requestId = randomUUID();
 
       const timeout = setTimeout(() => {
         unsubscribe();
-        finish({ ok: false, text: "pi-subagents did not answer the spawn request" });
+        finish({
+          ok: false,
+          text: "pi-subagents did not answer the spawn request",
+        });
       }, SPAWN_TIMEOUT_MS);
 
-      const unsubscribe = pi.events.on(`subagents:rpc:spawn:reply:${requestId}`, (data) => {
-        clearTimeout(timeout);
-        unsubscribe();
-        const reply = data as { success?: boolean; data?: { id?: string }; error?: string };
-        const id = reply.data?.id;
+      const unsubscribe = pi.events.on(
+        `subagents:rpc:spawn:reply:${requestId}`,
+        (data) => {
+          clearTimeout(timeout);
+          unsubscribe();
+          const reply = data as {
+            success?: boolean;
+            data?: { id?: string };
+            error?: string;
+          };
+          const id = reply.data?.id;
 
-        if (!reply.success || !id) {
-          finish({ ok: false, text: reply.error ?? "spawn failed" });
+          if (!reply.success || !id) {
+            finish({ ok: false, text: reply.error ?? "spawn failed" });
 
-          return;
-        }
+            return;
+          }
 
-        waiters.set(id, finish);
-      });
+          waiters.set(id, finish);
+        },
+      );
 
       pi.events.emit("subagents:rpc:spawn", {
         requestId,
@@ -491,7 +533,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     intro: string,
     thorough: boolean,
   ): Promise<AuditorResult> {
-    const providers = thorough ? collectContributions(pi).correctnessContexts : [];
+    const providers = thorough
+      ? collectContributions(pi).correctnessContexts
+      : [];
     const notify = (message: string) => currentCtx?.ui.notify(message, "info");
     const prepared: CorrectnessContext[] = [];
 
@@ -526,7 +570,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
         return result.value;
       });
 
-      const instructions = new Set(prepared.flatMap((context) => context.instructions ?? []));
+      const instructions = new Set(
+        prepared.flatMap((context) => context.instructions ?? []),
+      );
 
       if (!thorough) {
         instructions.add(AUTOMATIC_CORRECTNESS_RULE);
@@ -564,13 +610,19 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     } finally {
       for (const context of prepared) {
         await context.release?.().catch((error) => {
-          currentCtx?.ui.notify(`Correctness review context cleanup failed: ${String(error)}`, "warning");
+          currentCtx?.ui.notify(
+            `Correctness review context cleanup failed: ${String(error)}`,
+            "warning",
+          );
         });
       }
     }
   }
 
-  async function needsCorrectness(changes: RepoChange[], signal: AbortSignal): Promise<boolean> {
+  async function needsCorrectness(
+    changes: RepoChange[],
+    signal: AbortSignal,
+  ): Promise<boolean> {
     const changedLines = totalLines(changes);
 
     if (changedLines < CORRECTNESS_MIN_LINES) {
@@ -578,7 +630,11 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     }
 
     try {
-      const { scores, truncated } = await correctnessRisk(changes, loadConfig(pi).clef, signal);
+      const { scores, truncated } = await correctnessRisk(
+        changes,
+        loadConfig(pi).clef,
+        signal,
+      );
       const needed = scores.risky >= CLEF_RISK_THRESHOLD;
       currentCtx?.ui.notify(
         `Correctness review ${needed ? "running" : "skipped"}: Clef rates the risk ${scores.risky.toFixed(2)}${truncated ? " from a truncated diff" : ""}.`,
@@ -616,7 +672,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       }
 
       ctx.ui.setStatus(status, "correctness:running");
-      const intro = [AGENT_CORRECTNESS_INTRO, decisionsSection()].filter(Boolean).join("\n\n");
+      const intro = [AGENT_CORRECTNESS_INTRO, decisionsSection()]
+        .filter(Boolean)
+        .join("\n\n");
       const correctness = await runCorrectness(changes, signal, intro, false);
 
       if (signal.aborted) {
@@ -660,9 +718,14 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       return "";
     }
 
-    const lines = ledger.map((entry) => `- ${entry.decision}: ${entry.file}: ${entry.claim} (${entry.reason})`);
+    const lines = ledger.map(
+      (entry) =>
+        `- ${entry.decision}: ${entry.file}: ${entry.claim} (${entry.reason})`,
+    );
 
-    return ["Settled decisions — do not re-raise or reverse:", ...lines].join("\n");
+    return ["Settled decisions — do not re-raise or reverse:", ...lines].join(
+      "\n",
+    );
   }
 
   // The hygiene report stands in for code-restraint-review, which runs only when Clef could not judge the candidates.
@@ -681,7 +744,11 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       return runs;
     }
 
-    runs.push(start(auditors.refactor, reportedSection(hygiene)).then((result) => withoutRepeats(result, hygiene)));
+    runs.push(
+      start(auditors.refactor, reportedSection(hygiene)).then((result) =>
+        withoutRepeats(result, hygiene),
+      ),
+    );
 
     if (hygiene.comments.length > 0) {
       const { comment } = auditors;
@@ -704,14 +771,20 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       !hygiene.clefReachable &&
       totalLines(changes) >= FALLBACK_REVIEW_MIN_LINES
     ) {
-      currentCtx?.ui.notify("Clef could not judge the hygiene candidates, so code-restraint-review runs as well.", "warning");
+      currentCtx?.ui.notify(
+        "Clef could not judge the hygiene candidates, so code-restraint-review runs as well.",
+        "warning",
+      );
       runs.push(start(auditors.codeRestraint));
     }
 
     return runs;
   }
 
-  async function runAuditors(changes: RepoChange[], signal: AbortSignal): Promise<AuditorResult[]> {
+  async function runAuditors(
+    changes: RepoChange[],
+    signal: AbortSignal,
+  ): Promise<AuditorResult[]> {
     // Findings the agent never answered with audit_decision are taken as fixed.
     for (const [id, finding] of openFindings) {
       recordDecision({
@@ -724,7 +797,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
 
     openFindings.clear();
 
-    const auditIntro = [AGENT_AUDIT_INTRO, decisionsSection()].filter(Boolean).join("\n\n");
+    const auditIntro = [AGENT_AUDIT_INTRO, decisionsSection()]
+      .filter(Boolean)
+      .join("\n\n");
 
     const start = (auditor: Auditor, reported?: string) => {
       return runAuditor(
@@ -763,7 +838,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
   }
 
   // Safe to rewrite files here: the audit only runs once the main session and its subagents are idle.
-  async function formatTouchedFiles(ctx: ExtensionContext): Promise<Map<string, string[]>> {
+  async function formatTouchedFiles(
+    ctx: ExtensionContext,
+  ): Promise<Map<string, string[]>> {
     const applied = new Map<string, string[]>();
 
     for (const [root, paths] of touched) {
@@ -781,11 +858,15 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
           });
           names.push(run.name);
         } catch (error) {
-          const reason = (error as NodeJS.ErrnoException).code === "ENOENT"
-            ? "it is not installed"
-            : String(error);
+          const reason =
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+              ? "it is not installed"
+              : String(error);
 
-          ctx.ui.notify(`Post-change audit: skipped ${run.name} in ${root} because ${reason}.`, "warning");
+          ctx.ui.notify(
+            `Post-change audit: skipped ${run.name} in ${root} because ${reason}.`,
+            "warning",
+          );
         }
       }
 
@@ -813,7 +894,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       const current = await snapshotPaths(root, paths);
       const previous = lastAuditedTrees.get(root);
       const range = [base.tree, current, "--", ...paths];
-      const files = await git(root, ["diff", "--name-status", ...range], { env: LITERAL_PATHSPECS });
+      const files = await git(root, ["diff", "--name-status", ...range], {
+        env: LITERAL_PATHSPECS,
+      });
 
       // The touched paths match the base again, so there is nothing to audit there.
       if (!files) {
@@ -830,7 +913,11 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
         paths,
         files,
         formatters: formatted.get(root) ?? [],
-        lines: countLines(await git(root, ["diff", "--numstat", ...range], { env: LITERAL_PATHSPECS })),
+        lines: countLines(
+          await git(root, ["diff", "--numstat", ...range], {
+            env: LITERAL_PATHSPECS,
+          }),
+        ),
       });
     }
 
@@ -843,11 +930,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     results: AuditorResult[],
     trigger: "manual" | "automatic",
   ): void {
-    const {
-      failures,
-      hasFindings,
-      ...classified
-    } = classifyResults(results);
+    const { failures, hasFindings, ...classified } = classifyResults(results);
 
     if (failures) {
       ctx.ui.notify(`Post-change audit: ${failures}`, "warning");
@@ -870,11 +953,14 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       });
     }
 
-    const rerun = trigger === "automatic"
-      ? "fixes are re-audited automatically"
-      : "the user re-runs it";
+    const rerun =
+      trigger === "automatic"
+        ? "fixes are re-audited automatically"
+        : "the user re-runs it";
 
-    const noReportInstruction = classified.reviewers.some((reviewer) => reviewer.status === "no-report")
+    const noReportInstruction = classified.reviewers.some(
+      (reviewer) => reviewer.status === "no-report",
+    )
       ? " Act on valid points in no-report text."
       : "";
 
@@ -887,7 +973,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     });
   }
 
-  async function audit(ctx: ExtensionContext, trigger: "manual" | "automatic"): Promise<void> {
+  async function audit(
+    ctx: ExtensionContext,
+    trigger: "manual" | "automatic",
+  ): Promise<void> {
     const controller = new AbortController();
     inFlight = controller;
 
@@ -900,10 +989,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
         return true;
       }
 
-      if (
-        optOut.clefError &&
-        !clefOptOutFailureShown
-      ) {
+      if (optOut.clefError && !clefOptOutFailureShown) {
         clefOptOutFailureShown = true;
         ctx.ui.notify(
           `Clef could not check your message for an audit opt-out (${optOut.clefError}); only the keyword rule applied. Later Clef failures are not shown.`,
@@ -1026,7 +1112,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
 
     waiters.delete(data.id);
     // Must run synchronously in this handler to suppress pi-subagents' completion nudge.
-    pi.events.emit("subagents:rpc:consume", { requestId: randomUUID(), agentId: data.id });
+    pi.events.emit("subagents:rpc:consume", {
+      requestId: randomUUID(),
+      agentId: data.id,
+    });
     const key = data.id.slice(0, 8);
     const report = reports.get(key);
     reports.delete(key);
@@ -1064,7 +1153,11 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       settleWaiter(data, false);
     }),
     pi.events.on("manual-modes:changed", (data) => {
-      const modes = data as { subagents?: boolean; review?: boolean; autoAudit?: boolean };
+      const modes = data as {
+        subagents?: boolean;
+        review?: boolean;
+        autoAudit?: boolean;
+      };
       enabled = modes.subagents === true && modes.review === true;
       autoAudit = modes.autoAudit === true;
 
@@ -1085,12 +1178,11 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       return;
     }
 
-    if (
-      !ctx.isIdle() ||
-      runningSubagents.size > 0 ||
-      correctnessReview
-    ) {
-      ctx.ui.notify("Post-change audit: wait for the current turn, background agents, and /correctness to finish.", "warning");
+    if (!ctx.isIdle() || runningSubagents.size > 0 || correctnessReview) {
+      ctx.ui.notify(
+        "Post-change audit: wait for the current turn, background agents, and /correctness to finish.",
+        "warning",
+      );
 
       return;
     }
@@ -1108,31 +1200,37 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
   }
 
   // When this session has changed nothing in its repository yet, /audit and /correctness review the uncommitted changes there.
-  async function uncommittedPaths(ctx: ExtensionContext): Promise<{ root: string; paths: string[] } | undefined> {
+  async function uncommittedPaths(
+    ctx: ExtensionContext,
+  ): Promise<{ root: string; paths: string[] } | undefined> {
     const root = await repoRoot(ctx.cwd);
 
-    if (
-      !root ||
-      touched.has(root)
-    ) {
+    if (!root || touched.has(root)) {
       return undefined;
     }
 
-    const state = await worktreeState(root).catch(() => new Map<string, string>());
+    const state = await worktreeState(root).catch(
+      () => new Map<string, string>(),
+    );
 
     return { root, paths: [...state.keys()] };
   }
 
   // Unlike an audit, the review leaves the touched paths for the next audit, does not format them, and covers the
   // whole change rather than the hunks since the last audit.
-  async function reviewCorrectness(focus: string, ctx: ExtensionContext): Promise<void> {
+  async function reviewCorrectness(
+    focus: string,
+    ctx: ExtensionContext,
+  ): Promise<void> {
     const controller = new AbortController();
     const signal = AbortSignal.any([shutdown.signal, controller.signal]);
     const status = `${STATUS_KEY}:correctness`;
     correctnessReview = controller;
 
     try {
-      const pathsByRoot = new Map([...touched].map(([root, paths]) => [root, new Set(paths)]));
+      const pathsByRoot = new Map(
+        [...touched].map(([root, paths]) => [root, new Set(paths)]),
+      );
       const uncommitted = await uncommittedPaths(ctx);
 
       if (uncommitted) {
@@ -1140,7 +1238,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       }
 
       const collected = await collectChanges(new Map(), pathsByRoot);
-      const changes = collected.map((change) => ({ ...change, previous: undefined }));
+      const changes = collected.map((change) => ({
+        ...change,
+        previous: undefined,
+      }));
 
       if (changes.length === 0) {
         ctx.ui.notify("Correctness review: no changes to review.", "info");
@@ -1150,7 +1251,9 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
 
       ctx.ui.setStatus(status, "correctness:running");
       const request = focus ? `The user asked:\n/correctness ${focus}` : "";
-      const intro = [MANUAL_CORRECTNESS_INTRO, request, decisionsSection()].filter(Boolean).join("\n\n");
+      const intro = [MANUAL_CORRECTNESS_INTRO, request, decisionsSection()]
+        .filter(Boolean)
+        .join("\n\n");
       const correctness = await runCorrectness(changes, signal, intro, true);
 
       if (signal.aborted) {
@@ -1170,38 +1273,42 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
   pi.registerMessageRenderer(AUDIT_MESSAGE_TYPE, renderAuditMessage);
 
   pi.registerCommand("audit", {
-    description: "Run the post-change review agents on changes since the last message (or the last audit, while the automatic audit is on), regardless of size",
+    description:
+      "Run the post-change review agents on changes since the last message (or the last audit, while the automatic audit is on), regardless of size",
     handler: (_args, ctx) => startManualAudit(ctx),
   });
 
   pi.registerCommand("correctness", {
-    description: "Run correctness-review on the changes /audit would cover: /correctness [what to focus on]",
+    description:
+      "Run correctness-review on the changes /audit would cover: /correctness [what to focus on]",
     handler: async (args, ctx) => {
       if (role !== "root") {
         return;
       }
 
       if (!enabled) {
-        ctx.ui.notify("Correctness review: turn on /subagents and /review first.", "warning");
+        ctx.ui.notify(
+          "Correctness review: turn on /subagents and /review first.",
+          "warning",
+        );
 
         return;
       }
 
-      if (
-        inFlight ||
-        correctnessReview ||
-        automaticCorrectness
-      ) {
-        ctx.ui.notify("Correctness review: wait for the running audit or correctness review to finish.", "warning");
+      if (inFlight || correctnessReview || automaticCorrectness) {
+        ctx.ui.notify(
+          "Correctness review: wait for the running audit or correctness review to finish.",
+          "warning",
+        );
 
         return;
       }
 
-      if (
-        !ctx.isIdle() ||
-        runningSubagents.size > 0
-      ) {
-        ctx.ui.notify("Correctness review: wait for the current turn and background agents to finish.", "warning");
+      if (!ctx.isIdle() || runningSubagents.size > 0) {
+        ctx.ui.notify(
+          "Correctness review: wait for the current turn and background agents to finish.",
+          "warning",
+        );
 
         return;
       }
@@ -1213,7 +1320,8 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
   });
 
   pi.registerShortcut(Key.ctrlShift("r"), {
-    description: "Run the post-change review agents on changes since the last message",
+    description:
+      "Run the post-change review agents on changes since the last message",
     handler: startManualAudit,
   });
 
@@ -1246,10 +1354,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     // auditors must not audit their own test edits.
     const [type = "", key] = (pi.getSessionName() ?? "").split("#");
 
-    if (
-      AUDITOR_TYPES.has(type) ||
-      auditHub()?.auditorTypes.has(type)
-    ) {
+    if (AUDITOR_TYPES.has(type) || auditHub()?.auditorTypes.has(type)) {
       registerReportFindings(key);
 
       return;
@@ -1273,21 +1378,30 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       description:
         "Record whether a post-change audit finding was fixed or declined, so later audits neither re-raise nor reverse it.",
       promptSnippet: "Record the outcome of a post-change audit finding",
-      promptGuidelines: ["Use audit_decision once for every finding in an automatic post-change audit message."],
+      promptGuidelines: [
+        "Use audit_decision once for every finding in an automatic post-change audit message.",
+      ],
       parameters: AuditDecisionSchema,
       async execute(_toolCallId, params) {
         const finding = openFindings.get(params.id);
 
         if (!finding) {
           const open = [...openFindings.keys()].join(", ") || "none";
-          throw new Error(`No open audit finding ${params.id}; open findings: ${open}.`);
+          throw new Error(
+            `No open audit finding ${params.id}; open findings: ${open}.`,
+          );
         }
 
         openFindings.delete(params.id);
         recordDecision({ ...params, ...finding });
 
         return {
-          content: [{ type: "text" as const, text: `Recorded ${params.id} as ${params.decision}.` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Recorded ${params.id} as ${params.decision}.`,
+            },
+          ],
           details: undefined,
         };
       },
@@ -1306,10 +1420,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
         const notWaiting =
           "No post-change audit or /review-mr review is waiting for this report; return the findings as text instead.";
 
-        if (
-          !key ||
-          Reflect.get(globalThis, HUB_KEY) === undefined
-        ) {
+        if (!key || Reflect.get(globalThis, HUB_KEY) === undefined) {
           throw new Error(notWaiting);
         }
 
@@ -1326,7 +1437,12 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
         }
 
         return {
-          content: [{ type: "text" as const, text: `Reported ${params.findings.length} findings.` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Reported ${params.findings.length} findings.`,
+            },
+          ],
           details: undefined,
         };
       },
@@ -1395,11 +1511,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       const results = await Promise.all(runs);
       signal.throwIfAborted();
 
-      const {
-        failures,
-        hasFindings,
-        ...classified
-      } = classifyResults(results);
+      const { failures, hasFindings, ...classified } = classifyResults(results);
 
       const incomplete = failures
         ? " The review is incomplete because a reviewer failed or did not report; say so."
@@ -1419,9 +1531,14 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
 
       if (checkout) {
         const { repo, path } = checkout;
-        await git(repo, ["worktree", "remove", "--force", path]).catch((error) => {
-          ctx.ui.notify(`Review of ${pr.url} could not remove its worktree ${path}: ${String(error)}`, "warning");
-        });
+        await git(repo, ["worktree", "remove", "--force", path]).catch(
+          (error) => {
+            ctx.ui.notify(
+              `Review of ${pr.url} could not remove its worktree ${path}: ${String(error)}`,
+              "warning",
+            );
+          },
+        );
       }
     }
   }
@@ -1442,7 +1559,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
           const info = await pullRequestInfo(pr, signal);
 
           if (info.mine) {
-            ctx.ui.notify(`Skipping ${pr.url}: you authored it, and /review-mr only reviews other people's changes.`, "warning");
+            ctx.ui.notify(
+              `Skipping ${pr.url}: you authored it, and /review-mr only reviews other people's changes.`,
+              "warning",
+            );
             pullRequestReviews.delete(controller);
 
             return undefined;
@@ -1459,7 +1579,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
           };
         } catch (error) {
           if (!isAbortError(error)) {
-            ctx.ui.notify(`Review of ${pr.url} failed: ${String(error)}`, "error");
+            ctx.ui.notify(
+              `Review of ${pr.url} failed: ${String(error)}`,
+              "error",
+            );
           }
 
           pullRequestReviews.delete(controller);
@@ -1482,7 +1605,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       const urls = frames.map((frame) => frame.pr.url);
 
       if (urls.some((url) => reviewed.has(url))) {
-        ctx.ui.notify(`Skipping ${pr.url}: it is part of a stack already under review.`, "info");
+        ctx.ui.notify(
+          `Skipping ${pr.url}: it is part of a stack already under review.`,
+          "info",
+        );
         pullRequestReviews.delete(controller);
         continue;
       }
@@ -1505,14 +1631,17 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
 
           sendAuditMessage({
             pullRequest: pr.url,
-            instructions: "Tell the user the automatic review did not complete because of error, and offer to review it yourself.",
+            instructions:
+              "Tell the user the automatic review did not complete because of error, and offer to review it yourself.",
             error: isAbortError(error)
               ? "cancelled because /review or /subagents was turned off"
               : String(error),
           });
         })
         .finally(() => pullRequestReviews.delete(controller));
-      started.push(frames.length > 1 ? `${pr.url} (a stack of ${frames.length})` : pr.url);
+      started.push(
+        frames.length > 1 ? `${pr.url} (a stack of ${frames.length})` : pr.url,
+      );
     }
 
     return started;
@@ -1525,7 +1654,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     }
 
     userInputPending = true;
-    auditOptOut = role === "root" ? startOptOutCheck(event.text, loadConfig(pi).clef, shutdown.signal) : { keyword: false };
+    auditOptOut =
+      role === "root"
+        ? startOptOutCheck(event.text, loadConfig(pi).clef, shutdown.signal)
+        : { keyword: false };
 
     if (!auditOptOut.keyword) {
       ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -1548,7 +1680,8 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
   }
 
   pi.registerCommand("review-mr", {
-    description: "Review someone else's GitHub PR or GitLab MR: /review-mr <link> [what to focus on]",
+    description:
+      "Review someone else's GitHub PR or GitLab MR: /review-mr <link> [what to focus on]",
     handler: async (args, ctx) => {
       if (role !== "root") {
         return;
@@ -1557,13 +1690,19 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       const linked = linkedPullRequests(args, loadConfig(pi).forges ?? {});
 
       if (linked.length === 0) {
-        ctx.ui.notify("Usage: /review-mr <GitHub PR or GitLab MR link> [what to focus on]", "warning");
+        ctx.ui.notify(
+          "Usage: /review-mr <GitHub PR or GitLab MR link> [what to focus on]",
+          "warning",
+        );
 
         return;
       }
 
       if (linked.length > MAX_LINKED_REVIEWS) {
-        ctx.ui.notify(`Reviewing only the first ${MAX_LINKED_REVIEWS} of ${linked.length} linked reviews.`, "warning");
+        ctx.ui.notify(
+          `Reviewing only the first ${MAX_LINKED_REVIEWS} of ${linked.length} linked reviews.`,
+          "warning",
+        );
       }
 
       const reviewing = await startPullRequestReviews(
@@ -1573,7 +1712,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       );
 
       if (reviewing.length > 0) {
-        ctx.ui.notify(`Reviewing ${reviewing.join(", ")}; findings arrive as a follow-up.`, "info");
+        ctx.ui.notify(
+          `Reviewing ${reviewing.join(", ")}; findings arrive as a follow-up.`,
+          "info",
+        );
       }
     },
   });
@@ -1609,10 +1751,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       return;
     }
 
-    if (
-      event.toolName !== "edit" &&
-      event.toolName !== "write"
-    ) {
+    if (event.toolName !== "edit" && event.toolName !== "write") {
       return;
     }
 
@@ -1622,7 +1761,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       return;
     }
 
-    const file = resolve(ctx.cwd, path.replace(/^@/, "").replace(/^~(?=\/)/, homedir()));
+    const file = resolve(
+      ctx.cwd,
+      path.replace(/^@/, "").replace(/^~(?=\/)/, homedir()),
+    );
     const located = await locateFile(file);
 
     if (located) {
@@ -1658,7 +1800,10 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
 
     if (auditOptOut.keyword) {
       void skipAudit(ctx).catch((error) => {
-        ctx.ui.notify(`Post-change audit could not mark the skipped work as audited: ${String(error)}`, "warning");
+        ctx.ui.notify(
+          `Post-change audit could not mark the skipped work as audited: ${String(error)}`,
+          "warning",
+        );
       });
 
       return;
@@ -1673,10 +1818,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     abortInFlight();
     shutdown.abort();
 
-    if (
-      ownHub &&
-      auditHub() === ownHub
-    ) {
+    if (ownHub && auditHub() === ownHub) {
       Reflect.deleteProperty(globalThis, HUB_KEY);
     }
 

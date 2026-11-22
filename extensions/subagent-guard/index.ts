@@ -3,7 +3,12 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolCallEvent,
+  ToolCallEventResult,
+} from "@earendil-works/pi-coding-agent";
 
 import { SUBAGENT_SESSION_NAME } from "../auto-retry/index.ts";
 import { isForbiddenForSubagents, loadConfig } from "../shared/config.ts";
@@ -52,7 +57,9 @@ const GIT_WRITE_SUBCOMMANDS = [
 const FILE_EDIT_COMMANDS = String.raw`(?:sed|perl)(?:\s+-\S+)*?\s+-[a-zA-Z0-9]*i(?![a-zA-Z0-9])|(?:rm|mv)\b`;
 const FILE_REDIRECT = String.raw`>>?\|?(?!&)\s*(?!/dev/(?:null|stdout|stderr|tty)\b|/tmp/|/private/tmp/|/var/folders/|/private/var/folders/)[^\s&|;<>()]`;
 
-const GIT_STATE_MUTATION = new RegExp(`${COMMAND_START}${GIT}(?:${GIT_STATE_SUBCOMMANDS})`);
+const GIT_STATE_MUTATION = new RegExp(
+  `${COMMAND_START}${GIT}(?:${GIT_STATE_SUBCOMMANDS})`,
+);
 
 const FILE_OR_GIT_MUTATION = new RegExp(
   `${COMMAND_START}(?:${GIT}(?:${GIT_WRITE_SUBCOMMANDS})|${FILE_EDIT_COMMANDS})|${FILE_REDIRECT}`,
@@ -78,7 +85,9 @@ const SANDBOXED_COMMAND =
 const TASK_OUTPUT_PATH = /tasks\/([A-Za-z0-9_-]+)\.output\b/g;
 
 // Subagents run in the parent's process, so this map is shared by every session.
-const REPOSITORY_WRITERS_KEY = Symbol.for("pi-extensions/subagent-guard/repository-writers");
+const REPOSITORY_WRITERS_KEY = Symbol.for(
+  "pi-extensions/subagent-guard/repository-writers",
+);
 
 interface RepositoryWriter {
   sessionId: string;
@@ -127,14 +136,18 @@ function unsandboxedCommand(command: string): string {
 }
 
 function homeWriteDenyRules(home: string): string {
-  const writable = WRITABLE_HOME_DIRECTORIES.map((directory) => `(subpath "${join(home, directory)}")`).join(" ");
+  const writable = WRITABLE_HOME_DIRECTORIES.map(
+    (directory) => `(subpath "${join(home, directory)}")`,
+  ).join(" ");
 
   return `(deny file-write* (subpath "${home}"))(allow file-write* ${writable})`;
 }
 
 export function sandboxCommand(command: string, home: string): string {
   const sandboxed = parseSandboxedCommand(command);
-  const profile = (sandboxed?.profile ?? "(version 1)(allow default)") + homeWriteDenyRules(home);
+  const profile =
+    (sandboxed?.profile ?? "(version 1)(allow default)") +
+    homeWriteDenyRules(home);
 
   return [
     SANDBOX_EXEC,
@@ -152,7 +165,9 @@ export function taskOutputAgentIds(text: string): string[] {
 
 export function frontmatterModel(text: string): string | undefined {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
-  const value = frontmatter ? /^model:\s*(.+?)\s*$/m.exec(frontmatter)?.[1] : undefined;
+  const value = frontmatter
+    ? /^model:\s*(.+?)\s*$/m.exec(frontmatter)?.[1]
+    : undefined;
 
   return value?.replace(/^["']|["']$/g, "") || undefined;
 }
@@ -165,7 +180,8 @@ export function modelMatchesPin(requested: string, pinned: string): boolean {
 
 // Same precedence as pi-subagents: project .pi/agents, then .agents/agents, then global.
 function pinnedModel(agentType: string, cwd: string): string | undefined {
-  const agentDirectory = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  const agentDirectory =
+    process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 
   const agentFiles = [
     join(cwd, ".pi", "agents", `${agentType}.md`),
@@ -175,11 +191,15 @@ function pinnedModel(agentType: string, cwd: string): string | undefined {
 
   const agentFile = agentFiles.find((path) => existsSync(path));
 
-  return agentFile ? frontmatterModel(readFileSync(agentFile, "utf8")) : undefined;
+  return agentFile
+    ? frontmatterModel(readFileSync(agentFile, "utf8"))
+    : undefined;
 }
 
 function repositoryWriters(): Map<string, RepositoryWriter> {
-  const store = globalThis as typeof globalThis & { [REPOSITORY_WRITERS_KEY]?: Map<string, RepositoryWriter> };
+  const store = globalThis as typeof globalThis & {
+    [REPOSITORY_WRITERS_KEY]?: Map<string, RepositoryWriter>;
+  };
   store[REPOSITORY_WRITERS_KEY] ??= new Map();
 
   return store[REPOSITORY_WRITERS_KEY];
@@ -203,18 +223,28 @@ export default function (pi: ExtensionAPI) {
   const sessionId = randomUUID();
   const repositoryRootByDirectory = new Map<string, string | undefined>();
   // Normalized prompt to when, and by which tool call, the main session spawned an agent with it.
-  const recentPrompts = new Map<string, { spawnedAt: number; toolCallId: string }>();
+  const recentPrompts = new Map<
+    string,
+    { spawnedAt: number; toolCallId: string }
+  >();
   const home = realpathSync(homedir());
   const canSandbox = process.platform === "darwin" && existsSync(SANDBOX_EXEC);
 
-  const subagentType = (): string | undefined => SUBAGENT_SESSION_NAME.exec(pi.getSessionName() ?? "")?.[1];
+  const subagentType = (): string | undefined =>
+    SUBAGENT_SESSION_NAME.exec(pi.getSessionName() ?? "")?.[1];
 
-  const repositoryRoot = async (directory: string): Promise<string | undefined> => {
+  const repositoryRoot = async (
+    directory: string,
+  ): Promise<string | undefined> => {
     if (repositoryRootByDirectory.has(directory)) {
       return repositoryRootByDirectory.get(directory);
     }
 
-    const result = await pi.exec("git", ["-C", directory, "rev-parse", "--show-toplevel"], { timeout: 5_000 });
+    const result = await pi.exec(
+      "git",
+      ["-C", directory, "rev-parse", "--show-toplevel"],
+      { timeout: 5_000 },
+    );
     const root = result.code === 0 ? result.stdout.trim() : undefined;
     repositoryRootByDirectory.set(directory, root);
 
@@ -233,7 +263,10 @@ export default function (pi: ExtensionAPI) {
 
   // Two subagents writing to one checkout overwrite each other's work, so the first writer
   // holds the repository until it settles.
-  const claimRepository = async (directory: string, sessionName: string): Promise<ToolCallEventResult | undefined> => {
+  const claimRepository = async (
+    directory: string,
+    sessionName: string,
+  ): Promise<ToolCallEventResult | undefined> => {
     const root = await repositoryRoot(directory);
 
     if (!root) {
@@ -261,37 +294,30 @@ export default function (pi: ExtensionAPI) {
   ): ToolCallEventResult | undefined => {
     const agentType = input.subagent_type;
 
-    if (
-      typeof agentType !== "string" ||
-      typeof input.resume === "string"
-    ) {
+    if (typeof agentType !== "string" || typeof input.resume === "string") {
       return undefined;
     }
 
-    const trimmedModel = typeof input.model === "string" ? input.model.trim() : "";
+    const trimmedModel =
+      typeof input.model === "string" ? input.model.trim() : "";
     const requested = trimmedModel === "" ? undefined : trimmedModel;
     const pinned = pinnedModel(agentType, ctx.cwd);
     const { models } = loadConfig(pi);
     const configured = models?.agents?.[agentType];
 
-    if (
-      pinned &&
-      requested &&
-      !modelMatchesPin(requested, pinned)
-    ) {
+    if (pinned && requested && !modelMatchesPin(requested, pinned)) {
       return {
         block: true,
         reason: `${agentType} is pinned to ${pinned}, which overrides the model argument; omit model or choose an agent type pinned to ${requested}`,
       };
     }
 
-    const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+    const currentModel = ctx.model
+      ? `${ctx.model.provider}/${ctx.model.id}`
+      : undefined;
     const effectiveModel = pinned ?? requested ?? configured ?? currentModel;
 
-    if (
-      effectiveModel &&
-      isForbiddenForSubagents(models, effectiveModel)
-    ) {
+    if (effectiveModel && isForbiddenForSubagents(models, effectiveModel)) {
       const allowed = models?.subagent?.[0];
 
       return {
@@ -300,18 +326,16 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    if (
-      !pinned &&
-      !requested &&
-      configured
-    ) {
+    if (!pinned && !requested && configured) {
       input.model = configured;
     }
 
     return undefined;
   };
 
-  const checkReviewAgent = (input: Record<string, unknown>): ToolCallEventResult | undefined => {
+  const checkReviewAgent = (
+    input: Record<string, unknown>,
+  ): ToolCallEventResult | undefined => {
     if (
       typeof input.resume === "string" ||
       typeof input.subagent_type !== "string" ||
@@ -323,15 +347,18 @@ export default function (pi: ExtensionAPI) {
       return undefined;
     }
 
-    return { block: true, reason: `${input.subagent_type}: ${REVIEW_AGENT_REASON}` };
+    return {
+      block: true,
+      reason: `${input.subagent_type}: ${REVIEW_AGENT_REASON}`,
+    };
   };
 
   // An unattended main session once spawned two agents with the same prompt twelve seconds apart.
-  const checkDuplicatePrompt = (input: Record<string, unknown>, toolCallId: string): ToolCallEventResult | undefined => {
-    if (
-      typeof input.resume === "string" ||
-      typeof input.prompt !== "string"
-    ) {
+  const checkDuplicatePrompt = (
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): ToolCallEventResult | undefined => {
+    if (typeof input.resume === "string" || typeof input.prompt !== "string") {
       return undefined;
     }
 
@@ -348,7 +375,8 @@ export default function (pi: ExtensionAPI) {
     if (recentPrompts.has(prompt)) {
       return {
         block: true,
-        reason: "An agent with this exact prompt was spawned in the last 10 minutes; use get_subagent_result or resume it instead of spawning it again",
+        reason:
+          "An agent with this exact prompt was spawned in the last 10 minutes; use get_subagent_result or resume it instead of spawning it again",
       };
     }
 
@@ -366,12 +394,15 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  const guardReadOnlyTool = (event: ToolCallEvent, agentType: string): ToolCallEventResult | undefined => {
-    if (
-      event.toolName === "write" ||
-      event.toolName === "edit"
-    ) {
-      return { block: true, reason: `${agentType} is a read-only agent and cannot ${event.toolName} files` };
+  const guardReadOnlyTool = (
+    event: ToolCallEvent,
+    agentType: string,
+  ): ToolCallEventResult | undefined => {
+    if (event.toolName === "write" || event.toolName === "edit") {
+      return {
+        block: true,
+        reason: `${agentType} is a read-only agent and cannot ${event.toolName} files`,
+      };
     }
 
     if (event.toolName !== "bash") {
@@ -394,17 +425,15 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   };
 
-  const writeTargetDirectory = (event: ToolCallEvent, cwd: string): string | undefined => {
+  const writeTargetDirectory = (
+    event: ToolCallEvent,
+    cwd: string,
+  ): string | undefined => {
     const input = event.input as Record<string, unknown>;
 
-    const writesFile =
-      event.toolName === "write" ||
-      event.toolName === "edit";
+    const writesFile = event.toolName === "write" || event.toolName === "edit";
 
-    if (
-      writesFile &&
-      typeof input.path === "string"
-    ) {
+    if (writesFile && typeof input.path === "string") {
       return nearestExistingDirectory(resolveToolPath(input.path, cwd));
     }
 
@@ -420,7 +449,10 @@ export default function (pi: ExtensionAPI) {
   };
 
   const consumeCompletionNotification = (agentId: string) => {
-    pi.events.emit("subagents:rpc:consume", { requestId: randomUUID(), agentId });
+    pi.events.emit("subagents:rpc:consume", {
+      requestId: randomUUID(),
+      agentId,
+    });
   };
 
   pi.on("tool_call", async (event, ctx) => {
@@ -431,7 +463,11 @@ export default function (pi: ExtensionAPI) {
         return checkAgentModel(input, ctx);
       }
 
-      return checkReviewAgent(input) ?? checkAgentModel(input, ctx) ?? checkDuplicatePrompt(input, event.toolCallId);
+      return (
+        checkReviewAgent(input) ??
+        checkAgentModel(input, ctx) ??
+        checkDuplicatePrompt(input, event.toolCallId)
+      );
     }
 
     const agentType = subagentType();
@@ -442,7 +478,10 @@ export default function (pi: ExtensionAPI) {
 
     // A subagent once started autoresearch and committed to the main checkout.
     if (event.toolName.includes("experiment")) {
-      return { block: true, reason: "Subagents cannot run autoresearch experiment tools" };
+      return {
+        block: true,
+        reason: "Subagents cannot run autoresearch experiment tools",
+      };
     }
 
     if (
@@ -460,7 +499,10 @@ export default function (pi: ExtensionAPI) {
       typeof input.command === "string" &&
       mutatesGitState(unsandboxedCommand(input.command))
     ) {
-      return { block: true, reason: `${agentType} must not change git history or state` };
+      return {
+        block: true,
+        reason: `${agentType} must not change git history or state`,
+      };
     }
 
     const directory = writeTargetDirectory(event, ctx.cwd);
@@ -513,10 +555,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_end", async (event) => {
-    if (
-      event.toolName === "Agent" &&
-      event.isError
-    ) {
+    if (event.toolName === "Agent" && event.isError) {
       forgetPrompt(event.toolCallId);
     }
   });

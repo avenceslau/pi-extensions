@@ -4,8 +4,10 @@ export default {
   name: "code-restraint/generic-name",
   version: 1,
   subject: "New function, variable, constant, parameter and type names.",
-  requirement: "A name must not be a placeholder such as data, info, result, value, item, obj, tmp, thing, stuff, payload, handle, process, helper, flag or list, alone or with filler words (newValue, doStuff, processData). A constant holding a time, size, rate or count, such as TIMEOUT, DELAY, INTERVAL, LIMIT, SIZE, MAX or TTL, must carry its unit (TIMEOUT_MS, MAX_BODY_BYTES, retryDelaySeconds). A boolean must read as a yes-or-no question (isReady, hasLease, shouldRetry) or an adjective or participle (enabled, visible).",
-  purpose: "A reader should know what a name holds without reading the code around it or a comment.",
+  requirement:
+    "A name must not be a placeholder such as data, info, result, value, item, obj, tmp, thing, stuff, payload, handle, process, helper, flag or list, alone or with filler words (newValue, doStuff, processData). A constant holding a time, size, rate or count, such as TIMEOUT, DELAY, INTERVAL, LIMIT, SIZE, MAX or TTL, must carry its unit (TIMEOUT_MS, MAX_BODY_BYTES, retryDelaySeconds). A boolean must read as a yes-or-no question (isReady, hasLease, shouldRetry) or an adjective or participle (enabled, visible).",
+  purpose:
+    "A reader should know what a name holds without reading the code around it or a comment.",
   candidate: "identifier",
   check: "local",
   category: "naming",

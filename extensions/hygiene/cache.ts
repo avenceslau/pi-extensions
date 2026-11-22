@@ -47,21 +47,30 @@ function memoryCache<Value>(): KeyValueCache<Value> {
   };
 }
 
-function sqliteCache<Value extends number | string>(database: DatabaseSync, table: Table): KeyValueCache<Value> {
+function sqliteCache<Value extends number | string>(
+  database: DatabaseSync,
+  table: Table,
+): KeyValueCache<Value> {
   const { column, type } = TABLES[table];
   database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
   database.exec("PRAGMA journal_mode = WAL");
   database.exec(
     `CREATE TABLE IF NOT EXISTS ${table} (key TEXT PRIMARY KEY, ${column} ${type} NOT NULL, created INTEGER NOT NULL)`,
   );
-  const select = database.prepare(`SELECT ${column} AS value FROM ${table} WHERE key = ?`);
-  const insert = database.prepare(`INSERT OR REPLACE INTO ${table} (key, ${column}, created) VALUES (?, ?, ?)`);
+  const select = database.prepare(
+    `SELECT ${column} AS value FROM ${table} WHERE key = ?`,
+  );
+  const insert = database.prepare(
+    `INSERT OR REPLACE INTO ${table} (key, ${column}, created) VALUES (?, ?, ?)`,
+  );
 
   return {
     get: (key) => {
       const value = select.get(key)?.value;
 
-      return typeof value === "number" || typeof value === "string" ? (value as Value) : undefined;
+      return typeof value === "number" || typeof value === "string"
+        ? (value as Value)
+        : undefined;
     },
     set: (entries) => {
       if (entries.length === 0) {
@@ -87,7 +96,9 @@ function sqliteCache<Value extends number | string>(database: DatabaseSync, tabl
 }
 
 // Falls back to a cache that lasts for this run when node:sqlite is missing or the file cannot be opened.
-async function openCache<Value extends number | string>(table: Table): Promise<{ cache: KeyValueCache<Value>; problem?: string }> {
+async function openCache<Value extends number | string>(
+  table: Table,
+): Promise<{ cache: KeyValueCache<Value>; problem?: string }> {
   try {
     const { DatabaseSync } = await import("node:sqlite");
     mkdirSync(dirname(CACHE_PATH), { recursive: true });
@@ -101,10 +112,16 @@ async function openCache<Value extends number | string>(table: Table): Promise<{
   }
 }
 
-export function openAnswerCache(): Promise<{ cache: AnswerCache; problem?: string }> {
+export function openAnswerCache(): Promise<{
+  cache: AnswerCache;
+  problem?: string;
+}> {
   return openCache<number>("answers");
 }
 
-export function openVerdictCache(): Promise<{ cache: VerdictCache; problem?: string }> {
+export function openVerdictCache(): Promise<{
+  cache: VerdictCache;
+  problem?: string;
+}> {
   return openCache<string>("comment_verdicts");
 }

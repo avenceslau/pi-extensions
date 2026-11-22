@@ -16,31 +16,66 @@ const SEVERITIES = {
 } as const;
 
 const FindingSchema = Type.Object({
-  id: Type.String({ description: "Sequence number of the finding in this report: 1, 2, 3, ..." }),
+  id: Type.String({
+    description: "Sequence number of the finding in this report: 1, 2, 3, ...",
+  }),
   severity: StringEnum(["critical", "high", "medium", "low"] as const),
   file: Type.String({ description: "Path relative to the repository root" }),
   line: Type.Number({ description: "Line on the new side of the diff" }),
-  column: Type.Optional(Type.Number({ description: "Column where the problem starts, when it is a specific span" })),
-  endLine: Type.Optional(Type.Number({ description: "Last line of the problem, when it spans several lines" })),
+  column: Type.Optional(
+    Type.Number({
+      description:
+        "Column where the problem starts, when it is a specific span",
+    }),
+  ),
+  endLine: Type.Optional(
+    Type.Number({
+      description: "Last line of the problem, when it spans several lines",
+    }),
+  ),
   rule: Type.String({
-    description: "Short name of the rule, RFC, or invariant the code breaks, such as \"one-use helper\" or \"RFC-009 no any\"",
+    description:
+      'Short name of the rule, RFC, or invariant the code breaks, such as "one-use helper" or "RFC-009 no any"',
   }),
-  claim: Type.String({ description: "One sentence on what is wrong and why it matters" }),
+  claim: Type.String({
+    description: "One sentence on what is wrong and why it matters",
+  }),
   fix: Type.String({ description: "The smallest concrete fix" }),
-  frame: Type.Optional(Type.Number({ description: "Stack frame number the finding belongs to, when the review covers a stack" })),
+  frame: Type.Optional(
+    Type.Number({
+      description:
+        "Stack frame number the finding belongs to, when the review covers a stack",
+    }),
+  ),
 });
 
 export const FindingsReportSchema = Type.Object({
-  clean: Type.Boolean({ description: "True when there are no findings and every simulation you relied on passed" }),
+  clean: Type.Boolean({
+    description:
+      "True when there are no findings and every simulation you relied on passed",
+  }),
   findings: Type.Array(FindingSchema),
-  batches: Type.Optional(Type.Array(Type.String(), { description: "Every test run or simulation URL with its result" })),
-  notes: Type.Optional(Type.String({ description: "Anything else the reader needs, such as disproved doubts or worktrees holding new tests" })),
+  batches: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Every test run or simulation URL with its result",
+    }),
+  ),
+  notes: Type.Optional(
+    Type.String({
+      description:
+        "Anything else the reader needs, such as disproved doubts or worktrees holding new tests",
+    }),
+  ),
 });
 
 export const AuditDecisionSchema = Type.Object({
-  id: Type.String({ description: "Diagnostic id from the audit message, such as CR1" }),
+  id: Type.String({
+    description: "Diagnostic id from the audit message, such as CR1",
+  }),
   decision: StringEnum(["fixed", "declined"] as const),
-  reason: Type.String({ description: "One sentence on what was changed or why the finding is wrong" }),
+  reason: Type.String({
+    description: "One sentence on what was changed or why the finding is wrong",
+  }),
 });
 
 export const LedgerEntrySchema = Type.Object({
@@ -68,7 +103,11 @@ export const ReviewerStatusSchema = Type.Object({
   clean: Type.Optional(Type.Boolean()),
   batches: Type.Optional(Type.Array(Type.String())),
   notes: Type.Optional(Type.String()),
-  text: Type.Optional(Type.String({ description: "Final message or error of a reviewer that did not report" })),
+  text: Type.Optional(
+    Type.String({
+      description: "Final message or error of a reviewer that did not report",
+    }),
+  ),
 });
 
 export type FindingsReport = Static<typeof FindingsReportSchema>;
@@ -107,7 +146,10 @@ function reviewerName(source: string): string {
   return source.replace(/-(review|enforcer)$/, "");
 }
 
-function ruleId(name: string, rule: string): {
+function ruleId(
+  name: string,
+  rule: string,
+): {
   id: string;
   truncated: boolean;
 } {
@@ -156,7 +198,9 @@ function toDiagnostic(
     severity: SEVERITIES[finding.severity as keyof typeof SEVERITIES],
     rule: rule.id,
     // The rule id cut the reviewer's wording short, so the message keeps it.
-    message: rule.truncated ? `${finding.claim} (rule: ${finding.rule})` : finding.claim,
+    message: rule.truncated
+      ? `${finding.claim} (rule: ${finding.rule})`
+      : finding.claim,
     fix: finding.fix || undefined,
     frame: finding.frame,
   };
@@ -210,10 +254,12 @@ export function classifyResults(results: AuditorResult[]): {
       continue;
     }
 
-    diagnostics.push(...report.findings.map((finding, index) => toDiagnostic(name, idPrefix, finding, index)));
-    hasFindings ||=
-      report.findings.length > 0 ||
-      !report.clean;
+    diagnostics.push(
+      ...report.findings.map((finding, index) =>
+        toDiagnostic(name, idPrefix, finding, index),
+      ),
+    );
+    hasFindings ||= report.findings.length > 0 || !report.clean;
 
     // A reviewer whose diagnostics say everything is not listed again.
     const listed =

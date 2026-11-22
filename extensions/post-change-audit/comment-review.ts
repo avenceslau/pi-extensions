@@ -45,12 +45,23 @@ export interface CommentAuditor {
 
 function verdictKey(comment: ReviewedComment): string {
   return createHash("sha256")
-    .update(JSON.stringify([PROMPT_VERSION, comment.change, comment.text, comment.contextLines.join("\n")]))
+    .update(
+      JSON.stringify([
+        PROMPT_VERSION,
+        comment.change,
+        comment.text,
+        comment.contextLines.join("\n"),
+      ]),
+    )
     .digest("hex");
 }
 
 function byLocation(a: ReviewedComment, b: ReviewedComment): number {
-  return a.root.localeCompare(b.root) || a.path.localeCompare(b.path) || a.line - b.line;
+  return (
+    a.root.localeCompare(b.root) ||
+    a.path.localeCompare(b.path) ||
+    a.line - b.line
+  );
 }
 
 // Added comments come first when there are more than the agents take; each file stays in one batch where the sizes allow.
@@ -75,11 +86,7 @@ function batches(comments: ReviewedComment[]): {
     const file = `${comment.root}\n${comment.path}`;
     const full = grouped[grouped.length - 1].length >= target;
 
-    if (
-      file !== previousFile &&
-      full &&
-      grouped.length < agents
-    ) {
+    if (file !== previousFile && full && grouped.length < agents) {
       grouped.push([]);
     }
 
@@ -110,7 +117,9 @@ function excerptGroups(batch: Numbered[]): Numbered[][] {
   for (const entry of batch) {
     const group = groups[groups.length - 1];
     const previous = group?.[0].comment;
-    const sameFile = previous?.root === entry.comment.root && previous.path === entry.comment.path;
+    const sameFile =
+      previous?.root === entry.comment.root &&
+      previous.path === entry.comment.path;
 
     if (group && sameFile && entry.comment.contextStart <= end + 1) {
       group.push(entry);
@@ -126,11 +135,15 @@ function excerptGroups(batch: Numbered[]): Numbered[][] {
 }
 
 function describe({ comment, id }: Numbered): string {
-  const range = comment.endLine > comment.line ? `lines ${comment.line}-${comment.endLine}` : `line ${comment.line}`;
+  const range =
+    comment.endLine > comment.line
+      ? `lines ${comment.line}-${comment.endLine}`
+      : `line ${comment.line}`;
 
-  const stale = comment.change === "stale"
-    ? ` (this change edited lines ${comment.editedLines} and left the comment as it was)`
-    : "";
+  const stale =
+    comment.change === "stale"
+      ? ` (this change edited lines ${comment.editedLines} and left the comment as it was)`
+      : "";
 
   return `${id} ${comment.change} on ${range}${stale}`;
 }
@@ -139,7 +152,9 @@ function excerptSection(group: Numbered[]): string {
   const texts = new Map<number, string>();
 
   for (const { comment } of group) {
-    comment.contextLines.forEach((text, index) => texts.set(comment.contextStart + index, text));
+    comment.contextLines.forEach((text, index) =>
+      texts.set(comment.contextStart + index, text),
+    );
   }
 
   const markerWidth = Math.max(...group.map(({ id }) => id.length));
@@ -147,13 +162,19 @@ function excerptSection(group: Numbered[]): string {
   const rows = [...texts.keys()]
     .sort((a, b) => a - b)
     .map((line) => {
-      const marker = group.find(({ comment }) => line >= comment.line && line <= comment.endLine)?.id ?? "";
+      const marker =
+        group.find(
+          ({ comment }) => line >= comment.line && line <= comment.endLine,
+        )?.id ?? "";
       const text = (texts.get(line) ?? "").slice(0, MAX_LINE_CHARS);
 
       return `${marker.padStart(markerWidth)} ${String(line).padStart(LINE_NUMBER_WIDTH)}| ${text}`;
     });
 
-  return [`${group[0].comment.path}: ${group.map(describe).join("; ")}`, ...rows].join("\n");
+  return [
+    `${group[0].comment.path}: ${group.map(describe).join("; ")}`,
+    ...rows,
+  ].join("\n");
 }
 
 function reviewPrompt(
@@ -166,7 +187,10 @@ function reviewPrompt(
   const sections = roots.map((root) => {
     const comments = batch.filter(({ comment }) => comment.root === root);
 
-    return [`Repository: ${root}`, ...excerptGroups(comments).map(excerptSection)].join("\n\n");
+    return [
+      `Repository: ${root}`,
+      ...excerptGroups(comments).map(excerptSection),
+    ].join("\n\n");
   });
 
   return [
@@ -181,7 +205,7 @@ function reviewPrompt(
       "A stale comment was left as it was by a change that edited the code around it; if it no longer describes that code exactly, delete or replace it.",
     ].join("\n"),
     [
-      "Call report_findings exactly once with one finding per comment: id is the comment's id (M1, M2, ...), rule is the verdict (delete, replace or keep), claim is one sentence on why (for keep, what the code cannot express), fix is the change for replace, \"Delete the comment.\" for delete and \"Keep.\" for keep, severity is medium, and file and line are the comment's. Set clean to false. Only that report is read.",
+      'Call report_findings exactly once with one finding per comment: id is the comment\'s id (M1, M2, ...), rule is the verdict (delete, replace or keep), claim is one sentence on why (for keep, what the code cannot express), fix is the change for replace, "Delete the comment." for delete and "Keep." for keep, severity is medium, and file and line are the comment\'s. Set clean to false. Only that report is read.',
       "Each comment is shown with the code around it, its own lines marked with its id; comments close together share one excerpt. Read a file only when you need more of it.",
     ].join(" "),
     ...sections,
@@ -190,7 +214,10 @@ function reviewPrompt(
     .join("\n\n");
 }
 
-function verdictsFromReport(report: FindingsReport, ids: Set<string>): Map<string, Verdict> {
+function verdictsFromReport(
+  report: FindingsReport,
+  ids: Set<string>,
+): Map<string, Verdict> {
   const verdicts = new Map<string, Verdict>();
 
   for (const finding of report.findings) {
@@ -213,9 +240,14 @@ function location(comment: ReviewedComment): string {
 }
 
 function locations(comments: ReviewedComment[]): string {
-  const listed = comments.slice(0, MAX_LISTED_LOCATIONS).map(location).join(", ");
+  const listed = comments
+    .slice(0, MAX_LISTED_LOCATIONS)
+    .map(location)
+    .join(", ");
 
-  return comments.length > MAX_LISTED_LOCATIONS ? `${listed} and ${comments.length - MAX_LISTED_LOCATIONS} more` : listed;
+  return comments.length > MAX_LISTED_LOCATIONS
+    ? `${listed} and ${comments.length - MAX_LISTED_LOCATIONS} more`
+    : listed;
 }
 
 function toReport(judged: Judged[], problems: string[]): FindingsReport {
@@ -232,7 +264,10 @@ function toReport(judged: Judged[], problems: string[]): FindingsReport {
       endLine: comment.endLine > comment.line ? comment.endLine : undefined,
       rule: commentTrait.name,
       claim: verdict.reason,
-      fix: verdict.verdict === "replace" && verdict.change ? verdict.change : DELETE_FIX,
+      fix:
+        verdict.verdict === "replace" && verdict.change
+          ? verdict.change
+          : DELETE_FIX,
     }));
 
   const kept = sorted
@@ -297,18 +332,29 @@ async function judgeWithAgents(
     const batch = numbered[index];
 
     if (!result.ok || !result.report) {
-      const reason = result.ok ? "finished without report_findings" : `failed (${result.text})`;
-      problems.push(`A comment-review agent ${reason}, so ${batch.length} comments were not judged.`);
+      const reason = result.ok
+        ? "finished without report_findings"
+        : `failed (${result.text})`;
+      problems.push(
+        `A comment-review agent ${reason}, so ${batch.length} comments were not judged.`,
+      );
 
       return;
     }
 
     round.reported = true;
-    const verdicts = verdictsFromReport(result.report, new Set(batch.map(({ id }) => id)));
-    const missing = batch.filter(({ id }) => !verdicts.has(id)).map(({ comment }) => comment);
+    const verdicts = verdictsFromReport(
+      result.report,
+      new Set(batch.map(({ id }) => id)),
+    );
+    const missing = batch
+      .filter(({ id }) => !verdicts.has(id))
+      .map(({ comment }) => comment);
 
     if (missing.length > 0) {
-      problems.push(`comment-review gave no verdict for ${locations(missing)}.`);
+      problems.push(
+        `comment-review gave no verdict for ${locations(missing)}.`,
+      );
     }
 
     for (const { comment, id } of batch) {
@@ -357,7 +403,12 @@ export async function reviewComments(
       round = await judgeWithAgents(pending, auditor, intro, spawn, problems);
     }
 
-    cache.set(round.judged.map(({ comment, verdict }) => [verdictKey(comment), JSON.stringify(verdict)]));
+    cache.set(
+      round.judged.map(({ comment, verdict }) => [
+        verdictKey(comment),
+        JSON.stringify(verdict),
+      ]),
+    );
   } finally {
     cache.close();
   }

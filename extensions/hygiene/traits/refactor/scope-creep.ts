@@ -4,7 +4,8 @@ export default {
   name: "refactor/scope-creep",
   version: 1,
   subject: "The whole change against its stated purpose.",
-  requirement: "A change should do one thing; separable changes belong in separate reviews.",
+  requirement:
+    "A change should do one thing; separable changes belong in separate reviews.",
   purpose: "Mixed reviews hide risk.",
   candidate: "change",
   check: "llm",

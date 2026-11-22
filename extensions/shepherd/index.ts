@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -154,7 +154,8 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (phase === "reviewing") {
       const cycle = reviewCycles.get(review.key);
       const completed = cycle ? 2 - cycle.pending.size : 0;
-      const correction = loop > 0 ? ` · loop ${loop}/${MAX_CORRECTION_LOOPS}` : "";
+      const correction =
+        loop > 0 ? ` · loop ${loop}/${MAX_CORRECTION_LOOPS}` : "";
 
       return `adversarial review ${completed}/2${correction}`;
     }
@@ -188,7 +189,8 @@ export default function shepherd(pi: ExtensionAPI): void {
     const findings = results
       .map(({ kind, result }) => {
         const text = result.trim();
-        const bounded = text.length > 4_000 ? `${text.slice(0, 4_000)}\n[truncated]` : text;
+        const bounded =
+          text.length > 4_000 ? `${text.slice(0, 4_000)}\n[truncated]` : text;
 
         return `## ${kind}\n${bounded || "No output."}`;
       })
@@ -267,7 +269,9 @@ export default function shepherd(pi: ExtensionAPI): void {
     }
 
     if (flock.length === 0) {
-      lines.push(ctx.ui.theme.fg("muted", "No selected reviews are currently available"));
+      lines.push(
+        ctx.ui.theme.fg("muted", "No selected reviews are currently available"),
+      );
     }
 
     ctx.ui.setWidget("shepherd", lines);
@@ -294,21 +298,30 @@ export default function shepherd(pi: ExtensionAPI): void {
     );
   }
 
-  async function doRefresh(ctx: ExtensionContext, notify = false): Promise<void> {
+  async function doRefresh(
+    ctx: ExtensionContext,
+    notify = false,
+  ): Promise<void> {
     const previous = reviews;
     const result = await discoverReviews(pi, selected);
     reviews = new Map(result.reviews.map((review) => [review.key, review]));
     await invalidateStaleReviews();
 
     if (notify && result.warnings.length > 0) {
-      ctx.ui.notify(`Shepherd refresh completed with ${result.warnings.length} warning(s)`, "warning");
+      ctx.ui.notify(
+        `Shepherd refresh completed with ${result.warnings.length} warning(s)`,
+        "warning",
+      );
     }
 
     for (const review of selectedReviews()) {
       const old = previous.get(review.key);
 
       if (old && old.summary !== review.summary) {
-        ctx.ui.notify(`${displayKey(review)}: ${review.summary}`, review.status === "actionable" ? "warning" : "info");
+        ctx.ui.notify(
+          `${displayKey(review)}: ${review.summary}`,
+          review.status === "actionable" ? "warning" : "info",
+        );
       }
     }
 
@@ -392,9 +405,13 @@ export default function shepherd(pi: ExtensionAPI): void {
     const modelRef = loadConfig(pi).models?.agents?.[type];
     const separator = modelRef?.indexOf("/") ?? -1;
 
-    const model = modelRef && separator > 0
-      ? currentCtx?.modelRegistry.find(modelRef.slice(0, separator), modelRef.slice(separator + 1))
-      : undefined;
+    const model =
+      modelRef && separator > 0
+        ? currentCtx?.modelRegistry.find(
+            modelRef.slice(0, separator),
+            modelRef.slice(separator + 1),
+          )
+        : undefined;
 
     const options = {
       cwd: review.worktree,
@@ -402,7 +419,10 @@ export default function shepherd(pi: ExtensionAPI): void {
       model,
       isBackground: true,
       maxTurns: type === "review" ? 35 : type === REFACTOR_REVIEWER ? 20 : 80,
-      onToolActivity: (activity: { type: "start" | "end"; toolName: string }) => {
+      onToolActivity: (activity: {
+        type: "start" | "end";
+        toolName: string;
+      }) => {
         if (activity.type === "start") {
           preview.activeTools.push(activity.toolName);
         } else {
@@ -427,9 +447,9 @@ export default function shepherd(pi: ExtensionAPI): void {
       },
     };
 
-    const registry = (globalThis as any)[
-      Symbol.for("pi-subagents:manager")
-    ] as SubagentManagerRegistry | undefined;
+    const registry = (globalThis as any)[Symbol.for("pi-subagents:manager")] as
+      | SubagentManagerRegistry
+      | undefined;
 
     if (registry && currentCtx) {
       const id = registry.spawn(pi, currentCtx, type, prompt, options);
@@ -463,7 +483,11 @@ export default function shepherd(pi: ExtensionAPI): void {
 
       const timeout = setTimeout(() => {
         unsubscribe();
-        reject(new Error("Subagent extension is unavailable in this process; restart Pi and resume the session"));
+        reject(
+          new Error(
+            "Subagent extension is unavailable in this process; restart Pi and resume the session",
+          ),
+        );
       }, 5_000);
 
       pi.events.emit("subagents:rpc:spawn", {
@@ -493,12 +517,15 @@ export default function shepherd(pi: ExtensionAPI): void {
     }
 
     const blockedReason = await worktreeBlockedReason(pi, review.worktree);
-    const resumingRebase = blockedReason?.startsWith("rebase in progress") === true;
+    const resumingRebase =
+      blockedReason?.startsWith("rebase in progress") === true;
 
     if (!resumingRebase && !(await cleanWorktree(pi, review.worktree))) {
       phases.set(review.key, "blocked");
       updateUi(ctx);
-      throw new Error(`${displayKey(review)} has local changes; Shepherd requires a clean worktree before dispatch`);
+      throw new Error(
+        `${displayKey(review)} has local changes; Shepherd requires a clean worktree before dispatch`,
+      );
     }
 
     const baseline = await worktreeFingerprint(pi, review.worktree);
@@ -518,7 +545,10 @@ export default function shepherd(pi: ExtensionAPI): void {
     return id;
   }
 
-  async function spawnAdversarialReviews(ctx: ExtensionContext, review: Review): Promise<void> {
+  async function spawnAdversarialReviews(
+    ctx: ExtensionContext,
+    review: Review,
+  ): Promise<void> {
     const fingerprint = await worktreeFingerprint(pi, review.worktree);
 
     const cycle: ReviewCycle = {
@@ -549,7 +579,12 @@ export default function shepherd(pi: ExtensionAPI): void {
 
     const results = await Promise.allSettled(
       requests.map(async (request) => {
-        const id = await spawnAgent(request.type, review, request.description, request.prompt);
+        const id = await spawnAgent(
+          request.type,
+          review,
+          request.description,
+          request.prompt,
+        );
         activeRuns.set(id, { kind: request.kind, reviewKey: review.key });
         cycle.pending.add(id);
       }),
@@ -559,19 +594,29 @@ export default function shepherd(pi: ExtensionAPI): void {
       phases.set(review.key, "blocked");
       cycle.failed = true;
       updateUi(ctx);
-      throw new Error(`Unable to start adversarial reviewers for ${displayKey(review)}`);
+      throw new Error(
+        `Unable to start adversarial reviewers for ${displayKey(review)}`,
+      );
     }
 
     if (results.some((result) => result.status === "rejected")) {
       cycle.failed = true;
-      ctx.ui.notify(`${displayKey(review)} started only one adversarial reviewer`, "warning");
+      ctx.ui.notify(
+        `${displayKey(review)} started only one adversarial reviewer`,
+        "warning",
+      );
     }
 
     updateUi(ctx);
   }
 
-  async function handleRunFinished(data: unknown, failed: boolean): Promise<void> {
-    const value = data as { id?: string; result?: string; error?: string } | undefined;
+  async function handleRunFinished(
+    data: unknown,
+    failed: boolean,
+  ): Promise<void> {
+    const value = data as
+      | { id?: string; result?: string; error?: string }
+      | undefined;
     const id = value?.id;
     const ctx = currentCtx;
 
@@ -604,7 +649,12 @@ export default function shepherd(pi: ExtensionAPI): void {
           reportToCoordinator(
             review,
             `Shepherd stopped with ${blockedReason}.`,
-            [{ kind: "worker", result: value?.result ?? value?.error ?? "No output." }],
+            [
+              {
+                kind: "worker",
+                result: value?.result ?? value?.error ?? "No output.",
+              },
+            ],
           );
           updateUi(ctx);
 
@@ -625,7 +675,12 @@ export default function shepherd(pi: ExtensionAPI): void {
           failed
             ? "Shepherd worker failed before resolving the review findings."
             : "Shepherd worker made no changes for unresolved review findings.",
-          [{ kind: "worker", result: value?.error ?? value?.result ?? "No output." }],
+          [
+            {
+              kind: "worker",
+              result: value?.error ?? value?.result ?? "No output.",
+            },
+          ],
         );
       } else {
         phases.set(review.key, "idle");
@@ -669,10 +724,18 @@ export default function shepherd(pi: ExtensionAPI): void {
       return;
     }
 
-    const correctness = cycle.results.filter((result) => result.kind === "correctness");
-    const refactoring = cycle.results.filter((result) => result.kind === "refactor");
-    const correctnessFindings = correctness.filter((result) => hasMaterialFindings(result.result));
-    const refactoringFindings = refactoring.filter((result) => hasMaterialFindings(result.result));
+    const correctness = cycle.results.filter(
+      (result) => result.kind === "correctness",
+    );
+    const refactoring = cycle.results.filter(
+      (result) => result.kind === "refactor",
+    );
+    const correctnessFindings = correctness.filter((result) =>
+      hasMaterialFindings(result.result),
+    );
+    const refactoringFindings = refactoring.filter((result) =>
+      hasMaterialFindings(result.result),
+    );
 
     if (correctnessFindings.length > 0) {
       const loop = correctionLoops[review.key] ?? 0;
@@ -743,7 +806,10 @@ export default function shepherd(pi: ExtensionAPI): void {
     return `${review.key}:${review.headSha}:${target.name}`;
   }
 
-  async function retryReviewCi(ctx: ExtensionContext, review: Review): Promise<number> {
+  async function retryReviewCi(
+    ctx: ExtensionContext,
+    review: Review,
+  ): Promise<number> {
     await refresh(ctx);
     const currentReview = reviews.get(review.key);
 
@@ -814,7 +880,10 @@ export default function shepherd(pi: ExtensionAPI): void {
     const candidates = [...reviews.values()];
 
     if (candidates.length === 0) {
-      ctx.ui.notify("No open reviews with Shirei worktrees were found", "warning");
+      ctx.ui.notify(
+        "No open reviews with Shirei worktrees were found",
+        "warning",
+      );
 
       return;
     }
@@ -832,7 +901,10 @@ export default function shepherd(pi: ExtensionAPI): void {
     persist();
     startPolling(ctx);
     updateUi(ctx);
-    ctx.ui.notify(`Shepherd started with ${selected.size} review${selected.size === 1 ? "" : "s"}`, "info");
+    ctx.ui.notify(
+      `Shepherd started with ${selected.size} review${selected.size === 1 ? "" : "s"}`,
+      "info",
+    );
   }
 
   async function selectFlock(ctx: ExtensionCommandContext): Promise<void> {
@@ -902,12 +974,36 @@ export default function shepherd(pi: ExtensionAPI): void {
     description: "Select and tend open PRs/MRs with Shirei worktrees",
     getArgumentCompletions: (prefix) => {
       const commands = [
-        { value: "start", label: "start", description: "Select reviews and start monitoring" },
-        { value: "select", label: "select", description: "Change the selected reviews" },
-        { value: "status", label: "status", description: "Show the current flock" },
-        { value: "refresh", label: "refresh", description: "Refresh forge and CI state" },
-        { value: "dispatch", label: "dispatch", description: "Start a worker for a selected review" },
-        { value: "retry", label: "retry", description: "Retry failed CI for a selected review" },
+        {
+          value: "start",
+          label: "start",
+          description: "Select reviews and start monitoring",
+        },
+        {
+          value: "select",
+          label: "select",
+          description: "Change the selected reviews",
+        },
+        {
+          value: "status",
+          label: "status",
+          description: "Show the current flock",
+        },
+        {
+          value: "refresh",
+          label: "refresh",
+          description: "Refresh forge and CI state",
+        },
+        {
+          value: "dispatch",
+          label: "dispatch",
+          description: "Start a worker for a selected review",
+        },
+        {
+          value: "retry",
+          label: "retry",
+          description: "Retry failed CI for a selected review",
+        },
         { value: "stop", label: "stop", description: "Stop monitoring" },
       ];
 
@@ -915,7 +1011,9 @@ export default function shepherd(pi: ExtensionAPI): void {
       const separator = normalized.indexOf(" ");
 
       if (separator < 0) {
-        const matches = commands.filter((command) => command.value.startsWith(normalized));
+        const matches = commands.filter((command) =>
+          command.value.startsWith(normalized),
+        );
 
         return matches.length > 0 ? matches : null;
       }
@@ -937,7 +1035,10 @@ export default function shepherd(pi: ExtensionAPI): void {
       return matches.length > 0 ? matches : null;
     },
     handler: async (args, ctx) => {
-      const [action = active ? "status" : "start", ...rest] = args.trim().split(/\s+/).filter(Boolean);
+      const [action = active ? "status" : "start", ...rest] = args
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
 
       if (action === "start") {
         await start(ctx);
@@ -971,7 +1072,11 @@ export default function shepherd(pi: ExtensionAPI): void {
       }
 
       if (action === "dispatch") {
-        const review = await commandReview(ctx, rest[0] ?? "", "Dispatch Shepherd worker");
+        const review = await commandReview(
+          ctx,
+          rest[0] ?? "",
+          "Dispatch Shepherd worker",
+        );
 
         if (!review) {
           return;
@@ -979,13 +1084,20 @@ export default function shepherd(pi: ExtensionAPI): void {
 
         const instructions = rest.slice(1).join(" ");
         const id = await dispatchWorker(ctx, review, instructions);
-        ctx.ui.notify(`Started Shepherd worker ${id} for ${displayKey(review)}`, "info");
+        ctx.ui.notify(
+          `Started Shepherd worker ${id} for ${displayKey(review)}`,
+          "info",
+        );
 
         return;
       }
 
       if (action === "retry") {
-        const review = await commandReview(ctx, rest.join(" "), "Retry CI for review");
+        const review = await commandReview(
+          ctx,
+          rest.join(" "),
+          "Retry CI for review",
+        );
 
         if (!review) {
           return;
@@ -994,7 +1106,10 @@ export default function shepherd(pi: ExtensionAPI): void {
         const count = await retryReviewCi(ctx, review);
 
         if (count > 0) {
-          ctx.ui.notify(`Retried ${count} CI job${count === 1 ? "" : "s"}`, "info");
+          ctx.ui.notify(
+            `Retried ${count} CI job${count === 1 ? "" : "s"}`,
+            "info",
+          );
         }
 
         return;
@@ -1030,20 +1145,34 @@ export default function shepherd(pi: ExtensionAPI): void {
       "Shepherd workers automatically rebase review branches onto their declared target branch and may resume an interrupted Shepherd rebase; they must not merge, reset, cherry-pick, or push.",
     ],
     parameters: Type.Object({
-      review: Type.String({ description: "Selected review key, such as owner/repo#123 or group/repo!456" }),
-      instructions: Type.Optional(Type.String({ description: "Additional focused instructions for the worker" })),
+      review: Type.String({
+        description:
+          "Selected review key, such as owner/repo#123 or group/repo!456",
+      }),
+      instructions: Type.Optional(
+        Type.String({
+          description: "Additional focused instructions for the worker",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const review = resolveReview(params.review);
 
       if (!active || !review) {
-        throw new Error(`Shepherd review is not active or selected: ${params.review}`);
+        throw new Error(
+          `Shepherd review is not active or selected: ${params.review}`,
+        );
       }
 
       const id = await dispatchWorker(ctx, review, params.instructions);
 
       return {
-        content: [{ type: "text" as const, text: `Started worker ${id} for ${review.key}.` }],
+        content: [
+          {
+            type: "text" as const,
+            text: `Started worker ${id} for ${review.key}.`,
+          },
+        ],
         details: { review: review.key, agentId: id },
       };
     },
@@ -1052,25 +1181,37 @@ export default function shepherd(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "shepherd_retry_ci",
     label: "Shepherd Retry CI",
-    description: "Confirm and retry failed CI jobs for a selected Shepherd review",
+    description:
+      "Confirm and retry failed CI jobs for a selected Shepherd review",
     promptSnippet: "Retry failed CI jobs for a selected Shepherd PR or MR",
     promptGuidelines: [
       "Use shepherd_retry_ci only when the user explicitly asks to restart failed CI jobs.",
     ],
     parameters: Type.Object({
-      review: Type.String({ description: "Selected review key, such as owner/repo#123 or group/repo!456" }),
+      review: Type.String({
+        description:
+          "Selected review key, such as owner/repo#123 or group/repo!456",
+      }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const review = resolveReview(params.review);
 
       if (!active || !review) {
-        throw new Error(`Shepherd review is not active or selected: ${params.review}`);
+        throw new Error(
+          `Shepherd review is not active or selected: ${params.review}`,
+        );
       }
 
       const count = await retryReviewCi(ctx, review);
 
       return {
-        content: [{ type: "text" as const, text: count > 0 ? `Retried ${count} CI job(s).` : "CI retry cancelled." }],
+        content: [
+          {
+            type: "text" as const,
+            text:
+              count > 0 ? `Retried ${count} CI job(s).` : "CI retry cancelled.",
+          },
+        ],
         details: { review: review.key, retried: count },
       };
     },
@@ -1078,13 +1219,19 @@ export default function shepherd(pi: ExtensionAPI): void {
 
   const unsubscribeCompleted = pi.events.on("subagents:completed", (data) => {
     void handleRunFinished(data, false).catch((error) => {
-      currentCtx?.ui.notify(`Shepherd completion handling failed: ${String(error)}`, "error");
+      currentCtx?.ui.notify(
+        `Shepherd completion handling failed: ${String(error)}`,
+        "error",
+      );
     });
   });
 
   const unsubscribeFailed = pi.events.on("subagents:failed", (data) => {
     void handleRunFinished(data, true).catch((error) => {
-      currentCtx?.ui.notify(`Shepherd failure handling failed: ${String(error)}`, "error");
+      currentCtx?.ui.notify(
+        `Shepherd failure handling failed: ${String(error)}`,
+        "error",
+      );
     });
   });
 
@@ -1095,7 +1242,10 @@ export default function shepherd(pi: ExtensionAPI): void {
     if (active) {
       startPolling(ctx);
       void refresh(ctx).catch((error) => {
-        ctx.ui.notify(`Unable to restore Shepherd: ${String(error)}`, "warning");
+        ctx.ui.notify(
+          `Unable to restore Shepherd: ${String(error)}`,
+          "warning",
+        );
       });
     }
 

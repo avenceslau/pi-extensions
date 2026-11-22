@@ -7,7 +7,13 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { addCall, emptyAnalysis, mergeLineComments, type Analysis, type Comment } from "./analysis.ts";
+import {
+  addCall,
+  emptyAnalysis,
+  mergeLineComments,
+  type Analysis,
+  type Comment,
+} from "./analysis.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +38,9 @@ const RustItemSchema = Type.Object({
   pub: Type.Optional(Type.Boolean()),
   functionId: Type.Optional(Type.Integer()),
   column: Type.Optional(Type.Integer()),
-  valueType: Type.Optional(Type.Union([Type.Literal("boolean"), Type.Literal("number")])),
+  valueType: Type.Optional(
+    Type.Union([Type.Literal("boolean"), Type.Literal("number")]),
+  ),
 });
 
 const RustItemsSchema = Type.Array(RustItemSchema);
@@ -49,7 +57,10 @@ async function buildParser(): Promise<string> {
     hash.update(await readFile(join(SOURCE_DIR, file)));
   }
 
-  const binary = join(CACHE_DIR, `rust-ast-${hash.digest("hex").slice(0, HASH_CHARS)}`);
+  const binary = join(
+    CACHE_DIR,
+    `rust-ast-${hash.digest("hex").slice(0, HASH_CHARS)}`,
+  );
 
   if (existsSync(binary)) {
     return binary;
@@ -95,12 +106,19 @@ function columnAt(source: string, index: number): number {
 }
 
 // Returns the index of the closing quote of the string literal that opens at `start`, and the newlines inside it.
-function skipString(source: string, start: number, raw: RegExpExecArray | null): { end: number; newlines: number } {
+function skipString(
+  source: string,
+  start: number,
+  raw: RegExpExecArray | null,
+): { end: number; newlines: number } {
   const close = raw ? `"${raw[1]}` : '"';
   let cursor = start + (raw ? raw[0].length : 1);
   let newlines = 0;
 
-  while (cursor < source.length && source.slice(cursor, cursor + close.length) !== close) {
+  while (
+    cursor < source.length &&
+    source.slice(cursor, cursor + close.length) !== close
+  ) {
     if (!raw && source[cursor] === "\\") {
       cursor += 1;
     }
@@ -128,7 +146,10 @@ function rustComments(source: string): Comment[] {
       continue;
     }
 
-    const raw = char === "r" ? RAW_STRING_START.exec(source.slice(index, index + 10)) : null;
+    const raw =
+      char === "r"
+        ? RAW_STRING_START.exec(source.slice(index, index + 10))
+        : null;
 
     if (char === '"' || raw) {
       const skipped = skipString(source, index, raw);
@@ -137,7 +158,8 @@ function rustComments(source: string): Comment[] {
       continue;
     }
 
-    const charLiteral = char === "'" ? CHAR_LITERAL.exec(source.slice(index, index + 6)) : null;
+    const charLiteral =
+      char === "'" ? CHAR_LITERAL.exec(source.slice(index, index + 6)) : null;
 
     if (charLiteral) {
       index += charLiteral[0].length - 1;

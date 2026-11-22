@@ -1,7 +1,11 @@
 import { basename, dirname } from "node:path";
 import { TEST_FILE, type Analysis, type LocalFinding } from "./analysis.ts";
 import type { ChangedFile } from "./diff.ts";
-import { genericNameProblem, SHORT_NAME_MAX_CHARS, usefulSuggestion } from "./names.ts";
+import {
+  genericNameProblem,
+  SHORT_NAME_MAX_CHARS,
+  usefulSuggestion,
+} from "./names.ts";
 
 export interface FileFinding extends LocalFinding {
   path: string;
@@ -38,7 +42,13 @@ const SHORT_NAME_ALLOWED = new Set([
 const CEREMONY_SUFFIX = /(?:Factory|Manager|Helpers?|Utils?|Wrapper|Impl)$/;
 
 // Properties and fields often mirror a shape chosen elsewhere, such as a wire format.
-const GENERIC_NAME_KINDS = new Set(["function", "variable", "parameter", "type", "const"]);
+const GENERIC_NAME_KINDS = new Set([
+  "function",
+  "variable",
+  "parameter",
+  "type",
+  "const",
+]);
 
 const KEYWORDS = new Set([
   "if",
@@ -99,19 +109,27 @@ const KEYWORDS = new Set([
   "Err",
 ]);
 
-const LAYER_DIR = /(?:^|\/)(handlers|services|managers|controllers|stores|clients)$/;
+const LAYER_DIR =
+  /(?:^|\/)(handlers|services|managers|controllers|stores|clients)$/;
 const GENERIC_PREFIX = /^(?:index|test|tests|main|mod|lib|types|utils?)$/;
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|rs|go|py)$/;
 const STRING_LITERAL = /(["'`])(?:\\.|(?!\1).)*\1/g;
 
 // Findings the parser computed, plus the identifier and forwarding rules, limited to added lines.
-export function parsedFindings(path: string, analysis: Analysis, file: ChangedFile): FileFinding[] {
+export function parsedFindings(
+  path: string,
+  analysis: Analysis,
+  file: ChangedFile,
+): FileFinding[] {
   const findings: FileFinding[] = [];
   const deepEndByFunction = new Map<number | undefined, number>();
   const testFile = TEST_FILE.test(path);
 
   for (const finding of analysis.local) {
-    if (!file.added.has(finding.line) || (testFile && finding.rule === "code-restraint/magic-number")) {
+    if (
+      !file.added.has(finding.line) ||
+      (testFile && finding.rule === "code-restraint/magic-number")
+    ) {
       continue;
     }
 
@@ -165,7 +183,8 @@ export function parsedFindings(path: string, analysis: Analysis, file: ChangedFi
       });
     }
 
-    const ceremony = CEREMONY_SUFFIX.test(identifier.name) && identifier.kind !== "parameter";
+    const ceremony =
+      CEREMONY_SUFFIX.test(identifier.name) && identifier.kind !== "parameter";
 
     if (ceremony) {
       findings.push({
@@ -198,12 +217,21 @@ export function parsedFindings(path: string, analysis: Analysis, file: ChangedFi
     }
   }
 
-  const byName = new Map(analysis.functions.filter((fn) => fn.name).map((fn) => [fn.name, fn]));
+  const byName = new Map(
+    analysis.functions.filter((fn) => fn.name).map((fn) => [fn.name, fn]),
+  );
 
   for (const fn of analysis.functions) {
-    const target = fn.single?.kind === "call" ? byName.get(fn.single.name) : undefined;
+    const target =
+      fn.single?.kind === "call" ? byName.get(fn.single.name) : undefined;
 
-    if (!fn.name || !target || target === fn || target.single?.kind !== "call" || !file.added.has(fn.line)) {
+    if (
+      !fn.name ||
+      !target ||
+      target === fn ||
+      target.single?.kind !== "call" ||
+      !file.added.has(fn.line)
+    ) {
       continue;
     }
 
@@ -222,12 +250,20 @@ export function parsedFindings(path: string, analysis: Analysis, file: ChangedFi
 }
 
 // Needs no parser, so it runs on every language.
-export function longLineFindings(path: string, file: ChangedFile, lines: string[]): FileFinding[] {
+export function longLineFindings(
+  path: string,
+  file: ChangedFile,
+  lines: string[],
+): FileFinding[] {
   const findings: FileFinding[] = [];
   lines.forEach((text, index) => {
     const line = index + 1;
 
-    if (!file.added.has(line) || text.length < 110 || /^\s*(?:\/\/|\*|#|import\b)/.test(text)) {
+    if (
+      !file.added.has(line) ||
+      text.length < 110 ||
+      /^\s*(?:\/\/|\*|#|import\b)/.test(text)
+    ) {
       return;
     }
 
@@ -257,7 +293,10 @@ function normalizeLine(text: string): string {
 
 // A line counts when it holds more than punctuation, an import, or a comment.
 function significant(normalized: string, text: string): boolean {
-  return normalized.length >= 6 && !/^\s*(?:import|export\s*\{|use\s|\/\/|\*|\/\*|#)/.test(text);
+  return (
+    normalized.length >= 6 &&
+    !/^\s*(?:import|export\s*\{|use\s|\/\/|\*|\/\*|#)/.test(text)
+  );
 }
 
 interface DuplicateWindow {
@@ -268,7 +307,10 @@ interface DuplicateWindow {
   added: boolean;
 }
 
-function windowsByText(files: LintedFile[], size: number): Map<string, DuplicateWindow[]> {
+function windowsByText(
+  files: LintedFile[],
+  size: number,
+): Map<string, DuplicateWindow[]> {
   const windows = new Map<string, DuplicateWindow[]>();
 
   for (const { file, lines } of files) {
@@ -309,12 +351,22 @@ function windowsByText(files: LintedFile[], size: number): Map<string, Duplicate
 }
 
 function overlaps(first: DuplicateWindow, second: DuplicateWindow): boolean {
-  return first.path === second.path && first.start <= second.end && second.start <= first.end;
+  return (
+    first.path === second.path &&
+    first.start <= second.end &&
+    second.start <= first.end
+  );
 }
 
 // Runs of `size` significant lines that match after renaming identifiers and literals, where one copy is added code.
-export function duplicationFindings(files: LintedFile[], size: number): FileFinding[] {
-  const pairs = new Map<string, { copy: DuplicateWindow; original: DuplicateWindow }>();
+export function duplicationFindings(
+  files: LintedFile[],
+  size: number,
+): FileFinding[] {
+  const pairs = new Map<
+    string,
+    { copy: DuplicateWindow; original: DuplicateWindow }
+  >();
 
   for (const list of windowsByText(files, size).values()) {
     // Very common shapes, such as a run of similar imports or table rows, are not copies of one block.
@@ -323,7 +375,9 @@ export function duplicationFindings(files: LintedFile[], size: number): FileFind
     }
 
     for (const copy of list.filter((window) => window.added)) {
-      const original = list.find((window) => window !== copy && !overlaps(window, copy));
+      const original = list.find(
+        (window) => window !== copy && !overlaps(window, copy),
+      );
 
       if (!original) {
         continue;
@@ -331,7 +385,10 @@ export function duplicationFindings(files: LintedFile[], size: number): FileFind
 
       // Consecutive windows of one copied block share an index offset, so they merge into one pair.
       const key = `${copy.path}|${original.path}|${copy.index - original.index}`;
-      const pair = pairs.get(key) ?? { copy: { ...copy }, original: { ...original } };
+      const pair = pairs.get(key) ?? {
+        copy: { ...copy },
+        original: { ...original },
+      };
       pair.copy.start = Math.min(pair.copy.start, copy.start);
       pair.copy.end = Math.max(pair.copy.end, copy.end);
       pair.original.start = Math.min(pair.original.start, original.start);
@@ -364,7 +421,9 @@ export function duplicationFindings(files: LintedFile[], size: number): FileFind
 }
 
 function fileStem(name: string): string {
-  return name.replace(/\.(?:test|spec)?\.?[cm]?[jt]sx?$|\.(?:rs|go|py)$/, "").replace(/\.(?:test|spec)$/, "");
+  return name
+    .replace(/\.(?:test|spec)?\.?[cm]?[jt]sx?$|\.(?:rs|go|py)$/, "")
+    .replace(/\.(?:test|spec)$/, "");
 }
 
 function namePrefix(name: string): string | undefined {
@@ -406,14 +465,24 @@ export async function structureFindings(
     const prefix = namePrefix(name);
     const key = `${directory}/${prefix}`;
 
-    if (!prefix || GENERIC_PREFIX.test(prefix) || reported.has(key) || basename(directory).toLowerCase() === prefix) {
+    if (
+      !prefix ||
+      GENERIC_PREFIX.test(prefix) ||
+      reported.has(key) ||
+      basename(directory).toLowerCase() === prefix
+    ) {
       continue;
     }
 
-    const siblings = (await listDir(directory)).filter((sibling) => SOURCE_FILE.test(sibling));
+    const siblings = (await listDir(directory)).filter((sibling) =>
+      SOURCE_FILE.test(sibling),
+    );
 
     const cluster = siblings.filter((sibling) => {
-      return namePrefix(sibling) === prefix || fileStem(sibling).toLowerCase() === prefix;
+      return (
+        namePrefix(sibling) === prefix ||
+        fileStem(sibling).toLowerCase() === prefix
+      );
     });
 
     if (cluster.length < clusterSize) {

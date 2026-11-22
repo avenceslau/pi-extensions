@@ -1,4 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { loadConfig } from "../shared/config.ts";
 
@@ -37,7 +40,8 @@ export default function manualModes(pi: ExtensionAPI): void {
   }
 
   pi.registerCommand("subagents", {
-    description: "Enable, disable, or show subagent mode: /subagents on|off|status",
+    description:
+      "Enable, disable, or show subagent mode: /subagents on|off|status",
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase() || "status";
 
@@ -60,8 +64,12 @@ export default function manualModes(pi: ExtensionAPI): void {
 
       if (subagentsEnabled) {
         const available = new Set(pi.getAllTools().map((tool) => tool.name));
-        const subagentTools = SUBAGENT_TOOLS.filter((name) => available.has(name));
-        pi.setActiveTools([...new Set([...pi.getActiveTools(), ...subagentTools])]);
+        const subagentTools = SUBAGENT_TOOLS.filter((name) =>
+          available.has(name),
+        );
+        pi.setActiveTools([
+          ...new Set([...pi.getActiveTools(), ...subagentTools]),
+        ]);
       } else {
         pi.setActiveTools(
           pi.getActiveTools().filter((name) => !SUBAGENT_TOOLS.includes(name)),
@@ -77,7 +85,8 @@ export default function manualModes(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("review", {
-    description: "Enable, disable, or show code-review mode: /review on|off|status",
+    description:
+      "Enable, disable, or show code-review mode: /review on|off|status",
     handler: async (args, ctx) => {
       const mode = args.trim().toLowerCase() || "status";
 
@@ -114,8 +123,12 @@ export default function manualModes(pi: ExtensionAPI): void {
 
       if (enabled) {
         const available = new Set(pi.getAllTools().map((tool) => tool.name));
-        const subagentTools = SUBAGENT_TOOLS.filter((name) => available.has(name));
-        pi.setActiveTools([...new Set([...pi.getActiveTools(), ...subagentTools])]);
+        const subagentTools = SUBAGENT_TOOLS.filter((name) =>
+          available.has(name),
+        );
+        pi.setActiveTools([
+          ...new Set([...pi.getActiveTools(), ...subagentTools]),
+        ]);
       } else {
         pi.setActiveTools(
           pi.getActiveTools().filter((name) => !SUBAGENT_TOOLS.includes(name)),
@@ -131,7 +144,8 @@ export default function manualModes(pi: ExtensionAPI): void {
   });
 
   pi.registerShortcut(Key.ctrlShift("s"), {
-    description: "Toggle the automatic audit that runs once the main session and its subagents finish",
+    description:
+      "Toggle the automatic audit that runs once the main session and its subagents finish",
     handler: async (ctx) => {
       autoAuditEnabled = !autoAuditEnabled;
       updateStatus(ctx);
@@ -172,14 +186,18 @@ export default function manualModes(pi: ExtensionAPI): void {
   });
 
   const isReviewAgent = (agentType: string): boolean => {
-    return REVIEW_AGENTS.has(agentType) || (loadConfig(pi).agentRoles?.review?.includes(agentType) ?? false);
+    return (
+      REVIEW_AGENTS.has(agentType) ||
+      (loadConfig(pi).agentRoles?.review?.includes(agentType) ?? false)
+    );
   };
 
   pi.on("tool_call", async (event) => {
     if (SUBAGENT_TOOLS.includes(event.toolName) && !subagentsEnabled) {
       return {
         block: true,
-        reason: "Subagent mode is disabled. The user must run /subagents on first.",
+        reason:
+          "Subagent mode is disabled. The user must run /subagents on first.",
       };
     }
 
@@ -190,7 +208,8 @@ export default function manualModes(pi: ExtensionAPI): void {
     ) {
       return {
         block: true,
-        reason: "Code-review mode is disabled. The user must run /review on first.",
+        reason:
+          "Code-review mode is disabled. The user must run /review on first.",
       };
     }
   });

@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 
 type CodeReviewResult = {
   approved: boolean;
@@ -35,7 +38,10 @@ async function currentListeningPorts(pi: ExtensionAPI): Promise<Set<number>> {
   return result.code === 0 ? listeningPorts(result.stdout) : new Set();
 }
 
-async function waitForReviewUrl(pi: ExtensionAPI, previousPorts: Set<number>): Promise<string | undefined> {
+async function waitForReviewUrl(
+  pi: ExtensionAPI,
+  previousPorts: Set<number>,
+): Promise<string | undefined> {
   for (let attempt = 0; attempt < 100; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const ports = await currentListeningPorts(pi);
@@ -83,7 +89,9 @@ async function runIncrementalReview(
     if (reviewUrl !== undefined) {
       const opened = await pi.exec("open", [reviewUrl], { timeout: 5_000 });
       ctx.ui.notify(
-        opened.code === 0 ? `Incremental review opened: ${reviewUrl}` : `Open this URL to review: ${reviewUrl}`,
+        opened.code === 0
+          ? `Incremental review opened: ${reviewUrl}`
+          : `Open this URL to review: ${reviewUrl}`,
         "info",
       );
     }
@@ -103,7 +111,9 @@ async function runIncrementalReview(
     }
 
     ctx.ui.notify(
-      response.result.approved ? "Incremental review approved." : "Incremental review closed without feedback.",
+      response.result.approved
+        ? "Incremental review approved."
+        : "Incremental review closed without feedback.",
       "info",
     );
   } catch (error) {
@@ -128,7 +138,11 @@ export default function plannotatorIncremental(pi: ExtensionAPI): void {
 
       const plannotatorAvailable = pi
         .getCommands()
-        .some((command) => command.name === "plannotator-review" || command.name.startsWith("plannotator-review:"));
+        .some(
+          (command) =>
+            command.name === "plannotator-review" ||
+            command.name.startsWith("plannotator-review:"),
+        );
 
       if (!plannotatorAvailable) {
         ctx.ui.notify("Plannotator is not loaded in this session", "error");

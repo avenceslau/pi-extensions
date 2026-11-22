@@ -91,7 +91,8 @@ export interface Analysis {
   calls: Map<string, number[]>;
 }
 
-export const TEST_FILE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)tests?\/|_test\.(?:go|py|rs)$)/;
+export const TEST_FILE =
+  /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)tests?\/|_test\.(?:go|py|rs)$)/;
 
 export function emptyAnalysis(): Analysis {
   return {
@@ -106,7 +107,11 @@ export function emptyAnalysis(): Analysis {
   };
 }
 
-export function addCall(calls: Map<string, number[]>, name: string, line: number): void {
+export function addCall(
+  calls: Map<string, number[]>,
+  name: string,
+  line: number,
+): void {
   const lines = calls.get(name) ?? [];
   lines.push(line);
   calls.set(name, lines);

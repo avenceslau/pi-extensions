@@ -11,7 +11,10 @@ export function formatReport(result: LintResult): string {
   const lines: string[] = [];
 
   for (const diagnostic of result.diagnostics) {
-    const probability = diagnostic.probability === undefined ? "" : ` (${diagnostic.probability})`;
+    const probability =
+      diagnostic.probability === undefined
+        ? ""
+        : ` (${diagnostic.probability})`;
     lines.push(
       `${location(diagnostic)} ${diagnostic.severity} ${diagnostic.rule}${probability}: ${diagnostic.message}`,
       `  fix: ${diagnostic.fix}`,
@@ -22,7 +25,9 @@ export function formatReport(result: LintResult): string {
     lines.push("No hygiene diagnostics.");
   }
 
-  const stale = result.comments.filter((comment) => comment.change === "stale").length;
+  const stale = result.comments.filter(
+    (comment) => comment.change === "stale",
+  ).length;
 
   if (result.comments.length > 0) {
     lines.push(

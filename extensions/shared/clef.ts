@@ -10,7 +10,8 @@ const CLEF_TIMEOUT_MS = 30_000;
 
 // Both the audit and the hygiene linter send these requests.
 const USER_AGENT = "pi-extensions";
-const NOT_CONFIGURED = "Clef is not configured: add clef to the default export of ~/.pi/agent/pi-extensions.ts";
+const NOT_CONFIGURED =
+  "Clef is not configured: add clef to the default export of ~/.pi/agent/pi-extensions.ts";
 
 // A token command can take about a second, so a JWT is reused until shortly before it expires.
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60_000;
@@ -24,10 +25,22 @@ export const CLEF_MAX_STATE_CHARS = 200_000;
 const BATCH_CONCURRENCY = 8;
 
 const SECRETS: [RegExp, string][] = [
-  [/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED]"],
-  [/\b(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{16,}|\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]"],
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED]"],
-  [/((?:secret|token|password|api[_-]?key|authorization)["']?\s*[:=]\s*["']?)[^"'\s]{12,}/gi, "$1[REDACTED]"],
+  [
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+    "[REDACTED]",
+  ],
+  [
+    /\b(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{16,}|\bAKIA[0-9A-Z]{16}\b/g,
+    "[REDACTED]",
+  ],
+  [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    "[REDACTED]",
+  ],
+  [
+    /((?:secret|token|password|api[_-]?key|authorization)["']?\s*[:=]\s*["']?)[^"'\s]{12,}/gi,
+    "$1[REDACTED]",
+  ],
 ];
 
 const ClefAnswersSchema = Type.Object({
@@ -35,7 +48,10 @@ const ClefAnswersSchema = Type.Object({
 });
 
 // The Workers AI REST API wraps the model's output in `{ result, success, errors }`; other routes return it bare.
-const ClefResponseSchema = Type.Union([ClefAnswersSchema, Type.Object({ result: ClefAnswersSchema })]);
+const ClefResponseSchema = Type.Union([
+  ClefAnswersSchema,
+  Type.Object({ result: ClefAnswersSchema }),
+]);
 
 export interface ClefQuestion {
   type: "noul";
@@ -62,15 +78,23 @@ export interface ClefBatchAnswers {
   lastError?: string;
 }
 
-let cachedToken: { command: string; value: string; refreshAt: number } | undefined;
+let cachedToken:
+  | { command: string; value: string; refreshAt: number }
+  | undefined;
 
 function redactSecrets(text: string): string {
-  return SECRETS.reduce((redacted, [pattern, replacement]) => redacted.replace(pattern, replacement), text);
+  return SECRETS.reduce(
+    (redacted, [pattern, replacement]) =>
+      redacted.replace(pattern, replacement),
+    text,
+  );
 }
 
 function tokenExpiry(token: string): number | undefined {
   try {
-    const claims = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
+    const claims = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    );
 
     return typeof claims?.exp === "number" ? claims.exp * 1_000 : undefined;
   } catch {
@@ -78,14 +102,14 @@ function tokenExpiry(token: string): number | undefined {
   }
 }
 
-async function commandToken(commandLine: string[], signal?: AbortSignal): Promise<string> {
+async function commandToken(
+  commandLine: string[],
+  signal?: AbortSignal,
+): Promise<string> {
   const [program, ...args] = commandLine;
   const command = JSON.stringify(commandLine);
 
-  if (
-    cachedToken?.command === command &&
-    Date.now() < cachedToken.refreshAt
-  ) {
+  if (cachedToken?.command === command && Date.now() < cachedToken.refreshAt) {
     return cachedToken.value;
   }
 
@@ -101,19 +125,27 @@ async function commandToken(commandLine: string[], signal?: AbortSignal): Promis
   }
 
   const expiry = tokenExpiry(value);
-  cachedToken = expiry === undefined ? undefined : { command, value, refreshAt: expiry - TOKEN_REFRESH_MARGIN_MS };
+  cachedToken =
+    expiry === undefined
+      ? undefined
+      : { command, value, refreshAt: expiry - TOKEN_REFRESH_MARGIN_MS };
 
   return value;
 }
 
-async function authHeaders(clef: ClefConfig, signal?: AbortSignal): Promise<Record<string, string>> {
+async function authHeaders(
+  clef: ClefConfig,
+  signal?: AbortSignal,
+): Promise<Record<string, string>> {
   const { auth } = clef;
 
   if (!auth) {
     return {};
   }
 
-  const token = auth.command?.length ? await commandToken(auth.command, signal) : auth.token;
+  const token = auth.command?.length
+    ? await commandToken(auth.command, signal)
+    : auth.token;
 
   return token === undefined ? {} : { [auth.header]: token };
 }
@@ -204,9 +236,7 @@ export async function askClef<Key extends string>(
     scores = await requestAnswers(clef, auth, sent, questions, signal);
   } catch (error) {
     // Text denser than code, such as lockfiles, can exceed the token limit within the character limit.
-    const overTokenLimit =
-      isClefStatusError(error) &&
-      error.status === 422;
+    const overTokenLimit = isClefStatusError(error) && error.status === 422;
 
     if (!overTokenLimit) {
       throw error;
@@ -230,9 +260,14 @@ export async function askClefInBatches(
   batches: ClefBatch[],
   signal?: AbortSignal,
 ): Promise<ClefBatchAnswers> {
-  const calls: { batch: number; offset: number; questions: ClefQuestion[] }[] = [];
+  const calls: { batch: number; offset: number; questions: ClefQuestion[] }[] =
+    [];
   batches.forEach((batch, index) => {
-    for (let offset = 0; offset < batch.questions.length; offset += CLEF_MAX_QUESTIONS) {
+    for (
+      let offset = 0;
+      offset < batch.questions.length;
+      offset += CLEF_MAX_QUESTIONS
+    ) {
       calls.push({
         batch: index,
         offset,
@@ -267,14 +302,13 @@ export async function askClefInBatches(
   let next = 0;
 
   const worker = async () => {
-    while (
-      next < calls.length &&
-      !signal?.aborted
-    ) {
+    while (next < calls.length && !signal?.aborted) {
       const call = calls[next];
       next += 1;
       result.calls += 1;
-      const questions = Object.fromEntries(call.questions.map((question, index) => [`q${index}`, question]));
+      const questions = Object.fromEntries(
+        call.questions.map((question, index) => [`q${index}`, question]),
+      );
 
       try {
         const scores = await requestAnswers(

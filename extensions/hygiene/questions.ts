@@ -79,7 +79,9 @@ function alternateQuestion(
     return undefined;
   }
 
-  const asked = trait.alternate.replaceAll("{name}", candidate.name ?? "it").replaceAll("{candidate}", candidateId);
+  const asked = trait.alternate
+    .replaceAll("{name}", candidate.name ?? "it")
+    .replaceAll("{candidate}", candidateId);
 
   return {
     type: "noul",
@@ -94,8 +96,14 @@ function alternateQuestion(
 function numbered(lines: string[], from: number, to: number): string[] {
   const rows: string[] = [];
 
-  for (let line = Math.max(1, from); line <= Math.min(lines.length, to); line += 1) {
-    rows.push(`${String(line).padStart(LINE_NUMBER_WIDTH)}| ${lines[line - 1].slice(0, MAX_LINE_CHARS)}`);
+  for (
+    let line = Math.max(1, from);
+    line <= Math.min(lines.length, to);
+    line += 1
+  ) {
+    rows.push(
+      `${String(line).padStart(LINE_NUMBER_WIDTH)}| ${lines[line - 1].slice(0, MAX_LINE_CHARS)}`,
+    );
   }
 
   return rows;
@@ -117,11 +125,20 @@ function candidateText(candidate: Candidate, lines: string[]): string {
     ...(candidate.extraLines ?? []).map((line) => [line - 2, line + 2]),
   ];
 
-  return ranges.map(([start, end]) => lines.slice(Math.max(0, start - 1), end).join("\n")).join("\n…\n");
+  return ranges
+    .map(([start, end]) => lines.slice(Math.max(0, start - 1), end).join("\n"))
+    .join("\n…\n");
 }
 
-function cacheKey(trait: Trait, text: string, asked: ClefQuestion, candidateId: string): string {
-  const instructions = asked.instructions.replaceAll(candidateId, "C").replace(LINE_REFERENCE, "line");
+function cacheKey(
+  trait: Trait,
+  text: string,
+  asked: ClefQuestion,
+  candidateId: string,
+): string {
+  const instructions = asked.instructions
+    .replaceAll(candidateId, "C")
+    .replace(LINE_REFERENCE, "line");
 
   return createHash("sha256")
     .update(JSON.stringify([trait.name, trait.version, text, instructions]))
@@ -131,7 +148,9 @@ function cacheKey(trait: Trait, text: string, asked: ClefQuestion, candidateId: 
 function wordings(pending: PendingCandidate, candidateId: string): Wording[] {
   const { candidate, trait, lines } = pending;
   const text = candidateText(candidate, lines);
-  const facts = candidate.facts ? `\nFacts computed by the linter: ${candidate.facts}` : "";
+  const facts = candidate.facts
+    ? `\nFacts computed by the linter: ${candidate.facts}`
+    : "";
   const suffix = `Judge only the code between <<<CANDIDATE ${candidateId}>>> and <<<END ${candidateId}>>>; the rest is context.${facts}`;
 
   const asked = [
@@ -183,19 +202,37 @@ interface StateGroup {
 
 function windowState(group: PendingCandidate[]): StateGroup {
   const { lines, candidate: first } = group[0];
-  const members = group.map((pending, index) => ({ pending, candidateId: `C${index + 1}` }));
-  const from = Math.min(...group.map(({ candidate }) => excerptRange(candidate).from));
-  const to = Math.max(...group.map(({ candidate }) => excerptRange(candidate).to));
-  const marked = members.map(({ pending, candidateId }) => ({ candidate: pending.candidate, candidateId }));
+  const members = group.map((pending, index) => ({
+    pending,
+    candidateId: `C${index + 1}`,
+  }));
+  const from = Math.min(
+    ...group.map(({ candidate }) => excerptRange(candidate).from),
+  );
+  const to = Math.max(
+    ...group.map(({ candidate }) => excerptRange(candidate).to),
+  );
+  const marked = members.map(({ pending, candidateId }) => ({
+    candidate: pending.candidate,
+    candidateId,
+  }));
 
-  const outside = [...new Set(group.flatMap(({ candidate }) => candidate.extraLines ?? []))]
+  const outside = [
+    ...new Set(group.flatMap(({ candidate }) => candidate.extraLines ?? [])),
+  ]
     .filter((line) => line < from || line > to)
     .sort((a, b) => a - b);
 
   const rows = [`File: ${first.path}`, ...markedRows(lines, from, to, marked)];
 
   if (outside.length > 0) {
-    rows.push("Call sites:", ...outside.flatMap((line) => ["…", ...numbered(lines, line - 2, line + 2)]));
+    rows.push(
+      "Call sites:",
+      ...outside.flatMap((line) => [
+        "…",
+        ...numbered(lines, line - 2, line + 2),
+      ]),
+    );
   }
 
   return {
@@ -221,7 +258,10 @@ function windowGroups(pending: PendingCandidate[]): PendingCandidate[][] {
     let start = 0;
 
     for (const entry of list) {
-      if (group.length > 0 && excerptRange(entry.candidate).to - start > WINDOW_LINES) {
+      if (
+        group.length > 0 &&
+        excerptRange(entry.candidate).to - start > WINDOW_LINES
+      ) {
         groups.push(group);
         group = [];
       }
@@ -239,13 +279,25 @@ function windowGroups(pending: PendingCandidate[]): PendingCandidate[][] {
   return groups;
 }
 
-function snippetExcerpt(candidate: Candidate, lines: string[], candidateId: string): string[] {
+function snippetExcerpt(
+  candidate: Candidate,
+  lines: string[],
+  candidateId: string,
+): string[] {
   const { from, to } = excerptRange(candidate);
-  const rows = [`File: ${candidate.path}`, ...markedRows(lines, from, to, [{ candidate, candidateId }])];
-  const outside = (candidate.extraLines ?? []).filter((line) => line < from || line > to);
+  const rows = [
+    `File: ${candidate.path}`,
+    ...markedRows(lines, from, to, [{ candidate, candidateId }]),
+  ];
+  const outside = (candidate.extraLines ?? []).filter(
+    (line) => line < from || line > to,
+  );
 
   if (outside.length > 0) {
-    rows.push("Used on:", ...outside.flatMap((line) => numbered(lines, line, line)));
+    rows.push(
+      "Used on:",
+      ...outside.flatMap((line) => numbered(lines, line, line)),
+    );
   }
 
   return [...rows, ""];
@@ -271,7 +323,10 @@ function snippetStates(pending: PendingCandidate[]): StateGroup[] {
   };
 
   const sorted = [...pending].sort((a, b) => {
-    return a.candidate.path.localeCompare(b.candidate.path) || a.candidate.line - b.candidate.line;
+    return (
+      a.candidate.path.localeCompare(b.candidate.path) ||
+      a.candidate.line - b.candidate.line
+    );
   });
 
   // Ids are numbered across all snippet states, so they stay unique whichever state an excerpt lands in.
@@ -290,7 +345,10 @@ function snippetStates(pending: PendingCandidate[]): StateGroup[] {
     const excerpt = snippetExcerpt(candidate, lines, candidateId);
     const excerptSize = excerpt.join("\n").length;
 
-    if (members.length >= CLEF_MAX_QUESTIONS || size + excerptSize > SNIPPET_STATE_CHARS) {
+    if (
+      members.length >= CLEF_MAX_QUESTIONS ||
+      size + excerptSize > SNIPPET_STATE_CHARS
+    ) {
       flush();
     }
 
@@ -305,8 +363,12 @@ function snippetStates(pending: PendingCandidate[]): StateGroup[] {
 }
 
 function states(pending: PendingCandidate[]): StateGroup[] {
-  const snippets = pending.filter(({ candidate }) => candidate.layout === "snippet");
-  const windows = pending.filter(({ candidate }) => candidate.layout === "window");
+  const snippets = pending.filter(
+    ({ candidate }) => candidate.layout === "snippet",
+  );
+  const windows = pending.filter(
+    ({ candidate }) => candidate.layout === "window",
+  );
 
   return [
     ...snippetStates(snippets),
@@ -343,7 +405,9 @@ export async function judge(
       continue;
     }
 
-    const groupWordings = group.members.map(({ pending: entry, candidateId }) => wordings(entry, candidateId));
+    const groupWordings = group.members.map(({ pending: entry, candidateId }) =>
+      wordings(entry, candidateId),
+    );
 
     for (const wording of groupWordings.flat()) {
       stats.questions += 1;
@@ -362,7 +426,9 @@ export async function judge(
   const requests: { request: ClefBatch; wordings: Wording[] }[] = [];
 
   for (const { group, wordings: groupWordings } of asked) {
-    const missing = groupWordings.flat().filter((wording) => wording.probability === undefined);
+    const missing = groupWordings
+      .flat()
+      .filter((wording) => wording.probability === undefined);
 
     if (missing.length > 0) {
       requests.push({
@@ -404,7 +470,10 @@ export async function judge(
       const values = groupWordings[index].map((wording) => wording.probability);
 
       if (values.every((value) => value !== undefined)) {
-        results.set(entry.candidate, values.reduce((total, value) => total + value, 0) / values.length);
+        results.set(
+          entry.candidate,
+          values.reduce((total, value) => total + value, 0) / values.length,
+        );
       }
     });
   }

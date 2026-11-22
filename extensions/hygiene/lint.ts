@@ -25,7 +25,8 @@ import { CATEGORY_NAMES, TRAITS, type Trait } from "./traits.ts";
 
 const TYPESCRIPT_FILE = /\.[cm]?[jt]sx?$/;
 const RUST_FILE = /\.rs$/;
-const OTHER_CODE_FILE = /\.(?:go|py|c|cc|cpp|cxx|h|hh|hpp|java|kt|kts|swift|rb|sh|bash|cs|php|scala|zig|lua)$/;
+const OTHER_CODE_FILE =
+  /\.(?:go|py|c|cc|cpp|cxx|h|hh|hpp|java|kt|kts|swift|rb|sh|bash|cs|php|scala|zig|lua)$/;
 const MAX_FILE_CHARS = 1_500_000;
 const COMMENT_RULE = "code-restraint/comment";
 
@@ -121,15 +122,23 @@ interface Context {
   signal?: AbortSignal;
 }
 
-async function changedFiles(options: LintOptions, tree: SourceTree): Promise<ChangedFile[]> {
-  const files = options.diffText === undefined ? [] : parseDiff(options.diffText);
+async function changedFiles(
+  options: LintOptions,
+  tree: SourceTree,
+): Promise<ChangedFile[]> {
+  const files =
+    options.diffText === undefined ? [] : parseDiff(options.diffText);
 
   for (const path of options.paths ?? []) {
-    const lineCount = (await tree.read(path).catch(() => "")).split("\n").length;
+    const lineCount = (await tree.read(path).catch(() => "")).split(
+      "\n",
+    ).length;
     files.push({
       path,
       status: "A",
-      added: new Set(Array.from({ length: lineCount }, (_, index) => index + 1)),
+      added: new Set(
+        Array.from({ length: lineCount }, (_, index) => index + 1),
+      ),
       changedLines: lineCount,
     });
   }
@@ -137,13 +146,21 @@ async function changedFiles(options: LintOptions, tree: SourceTree): Promise<Cha
   return files;
 }
 
-function threshold(traits: Map<string, Trait>, rule: string, fallback: number): number {
+function threshold(
+  traits: Map<string, Trait>,
+  rule: string,
+  fallback: number,
+): number {
   const trait = traits.get(rule);
 
-  return trait?.check === "local" ? (trait.sizeThreshold ?? fallback) : fallback;
+  return trait?.check === "local"
+    ? (trait.sizeThreshold ?? fallback)
+    : fallback;
 }
 
-async function typeScriptAnalyzer(notices: string[]): Promise<typeof import("./typescript.ts") | undefined> {
+async function typeScriptAnalyzer(
+  notices: string[],
+): Promise<typeof import("./typescript.ts") | undefined> {
   try {
     return await import("./typescript.ts");
   } catch (error) {
@@ -167,18 +184,31 @@ async function rustParserPath(notices: string[]): Promise<string | undefined> {
   }
 }
 
-async function readFiles(files: ChangedFile[], context: Context): Promise<LintedFile[]> {
-  const depth = threshold(context.traits, "code-restraint/deep-nesting", DEFAULT_NESTING_DEPTH);
+async function readFiles(
+  files: ChangedFile[],
+  context: Context,
+): Promise<LintedFile[]> {
+  const depth = threshold(
+    context.traits,
+    "code-restraint/deep-nesting",
+    DEFAULT_NESTING_DEPTH,
+  );
 
   const code = files.filter((file) => {
-    return TYPESCRIPT_FILE.test(file.path) || RUST_FILE.test(file.path) || OTHER_CODE_FILE.test(file.path);
+    return (
+      TYPESCRIPT_FILE.test(file.path) ||
+      RUST_FILE.test(file.path) ||
+      OTHER_CODE_FILE.test(file.path)
+    );
   });
 
   const typescript = code.some((file) => TYPESCRIPT_FILE.test(file.path))
     ? await typeScriptAnalyzer(context.notices)
     : undefined;
 
-  const rust = code.some((file) => RUST_FILE.test(file.path)) ? await rustParserPath(context.notices) : undefined;
+  const rust = code.some((file) => RUST_FILE.test(file.path))
+    ? await rustParserPath(context.notices)
+    : undefined;
 
   const linted: LintedFile[] = [];
 
@@ -186,7 +216,11 @@ async function readFiles(files: ChangedFile[], context: Context): Promise<Linted
     // Unreadable entries, such as submodules, are skipped.
     const source = await context.tree.read(file.path).catch(() => undefined);
 
-    if (source === undefined || source.length > MAX_FILE_CHARS || source.includes("\0")) {
+    if (
+      source === undefined ||
+      source.length > MAX_FILE_CHARS ||
+      source.includes("\0")
+    ) {
       continue;
     }
 
@@ -209,7 +243,11 @@ async function readFiles(files: ChangedFile[], context: Context): Promise<Linted
   return linted;
 }
 
-async function localFindings(linted: LintedFile[], files: ChangedFile[], context: Context): Promise<Finding[]> {
+async function localFindings(
+  linted: LintedFile[],
+  files: ChangedFile[],
+  context: Context,
+): Promise<Finding[]> {
   const { traits } = context;
   const findings: Finding[] = [];
 
@@ -222,19 +260,33 @@ async function localFindings(linted: LintedFile[], files: ChangedFile[], context
   }
 
   findings.push(
-    ...duplicationFindings(linted, threshold(traits, "refactor/duplication", DEFAULT_DUPLICATE_LINES)),
+    ...duplicationFindings(
+      linted,
+      threshold(traits, "refactor/duplication", DEFAULT_DUPLICATE_LINES),
+    ),
     ...(await structureFindings(
       files,
-      threshold(traits, "refactor/structure-flat-cluster", DEFAULT_CLUSTER_SIZE),
+      threshold(
+        traits,
+        "refactor/structure-flat-cluster",
+        DEFAULT_CLUSTER_SIZE,
+      ),
       (dir) => context.tree.listDir(dir),
     )),
   );
 
-  return findings.filter((finding) => traits.get(finding.rule)?.check === "local");
+  return findings.filter(
+    (finding) => traits.get(finding.rule)?.check === "local",
+  );
 }
 
-async function candidatesFor(linted: LintedFile[], context: Context): Promise<Candidate[]> {
-  const clefTraits = [...context.traits.values()].filter((trait) => trait.check === "clef");
+async function candidatesFor(
+  linted: LintedFile[],
+  context: Context,
+): Promise<Candidate[]> {
+  const clefTraits = [...context.traits.values()].filter(
+    (trait) => trait.check === "clef",
+  );
   const unbuilt = clefTraits.filter((trait) => !BUILT_RULES.has(trait.name));
   const candidates: Candidate[] = [];
 
@@ -260,12 +312,17 @@ async function candidatesFor(linted: LintedFile[], context: Context): Promise<Ca
   return candidates;
 }
 
-function commentsFor(linted: LintedFile[], traits: Map<string, Trait>): CommentCandidate[] {
+function commentsFor(
+  linted: LintedFile[],
+  traits: Map<string, Trait>,
+): CommentCandidate[] {
   if (traits.get(COMMENT_RULE)?.check !== "agent") {
     return [];
   }
 
-  return linted.flatMap(({ file, lines, analysis }) => commentCandidates(file.path, file, lines, analysis));
+  return linted.flatMap(({ file, lines, analysis }) =>
+    commentCandidates(file.path, file, lines, analysis),
+  );
 }
 
 // Spans of added lines that Clef flags are halved and asked again, so the diagnostic points at the lines that break the rule.
@@ -292,7 +349,10 @@ async function clefFindings(
     });
   };
 
-  type Asked = { candidate: Candidate; parent?: { candidate: Candidate; probability: number } };
+  type Asked = {
+    candidate: Candidate;
+    parent?: { candidate: Candidate; probability: number };
+  };
 
   let round: Asked[] = candidates.map((candidate) => ({ candidate }));
 
@@ -323,7 +383,10 @@ async function clefFindings(
       }
 
       confirmedParents.add(parent);
-      const halves = depth + 1 < BISECT_ROUNDS ? splitSpan(candidate, fileLines.get(candidate.path) ?? []) : [];
+      const halves =
+        depth + 1 < BISECT_ROUNDS
+          ? splitSpan(candidate, fileLines.get(candidate.path) ?? [])
+          : [];
 
       if (halves.length === 0) {
         flag(candidate, probability);
@@ -331,7 +394,9 @@ async function clefFindings(
       }
 
       const located = { candidate, probability };
-      next.push(...halves.map((half) => ({ candidate: half, parent: located })));
+      next.push(
+        ...halves.map((half) => ({ candidate: half, parent: located })),
+      );
     }
 
     // A flagged span whose halves are not flagged on their own is reported whole.
@@ -354,48 +419,74 @@ function fillFix(template: string, finding: Finding): string {
     prefix: finding.prefix,
   };
 
-  const fix = template.replace(/(`?)\{(\w+)\}\1/g, (_match, tick: string, key: string) => {
-    const value = values[key];
+  const fix = template.replace(
+    /(`?)\{(\w+)\}\1/g,
+    (_match, tick: string, key: string) => {
+      const value = values[key];
 
-    return value ? `${tick}${value}${tick}` : "it";
-  });
+      return value ? `${tick}${value}${tick}` : "it";
+    },
+  );
 
-  return finding.suggestion ? `${fix} The code suggests \`${finding.suggestion}\`.` : fix;
+  return finding.suggestion
+    ? `${fix} The code suggests \`${finding.suggestion}\`.`
+    : fix;
 }
 
-function nameKey(finding: { path: string; line: number; name?: string }): string {
+function nameKey(finding: {
+  path: string;
+  line: number;
+  name?: string;
+}): string {
   return `${finding.path}:${finding.line}:${finding.name}`;
 }
 
-function withoutNamedTwice<Entry extends { rule: string; path: string; line: number; name?: string }>(
-  entries: Entry[],
-  flagged: Finding[],
-): Entry[] {
-  const named = new Set(flagged.filter((finding) => NAME_RULES.has(finding.rule)).map(nameKey));
+function withoutNamedTwice<
+  Entry extends { rule: string; path: string; line: number; name?: string },
+>(entries: Entry[], flagged: Finding[]): Entry[] {
+  const named = new Set(
+    flagged.filter((finding) => NAME_RULES.has(finding.rule)).map(nameKey),
+  );
 
-  return entries.filter((entry) => entry.rule !== "code-restraint/undescriptive-name" || !named.has(nameKey(entry)));
+  return entries.filter(
+    (entry) =>
+      entry.rule !== "code-restraint/undescriptive-name" ||
+      !named.has(nameKey(entry)),
+  );
 }
 
-function toDiagnostics(findings: Finding[], traits: Map<string, Trait>): HygieneDiagnostic[] {
+function toDiagnostics(
+  findings: Finding[],
+  traits: Map<string, Trait>,
+): HygieneDiagnostic[] {
   const sorted = findings
     .map((finding) => {
       const trait = traits.get(finding.rule);
-      const testCopy = finding.rule === "refactor/duplication" && TEST_FILE.test(finding.path);
+      const testCopy =
+        finding.rule === "refactor/duplication" && TEST_FILE.test(finding.path);
 
       return {
         file: finding.path,
         line: finding.line,
         endLine: finding.endLine > finding.line ? finding.endLine : undefined,
         column: finding.column,
-        severity: testCopy ? "info" : trait?.severity ?? "warning",
+        severity: testCopy ? "info" : (trait?.severity ?? "warning"),
         rule: finding.rule,
         message: finding.message,
         fix: fillFix(trait?.fix ?? "", finding),
         source: "hygiene" as const,
-        probability: finding.probability === undefined ? undefined : Math.round(finding.probability * 1000) / 1000,
+        probability:
+          finding.probability === undefined
+            ? undefined
+            : Math.round(finding.probability * 1000) / 1000,
       } satisfies Omit<HygieneDiagnostic, "id">;
     })
-    .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
+    .sort(
+      (a, b) =>
+        a.file.localeCompare(b.file) ||
+        a.line - b.line ||
+        a.rule.localeCompare(b.rule),
+    );
 
   return sorted.map((diagnostic, index) => ({
     id: `H${index + 1}`,
@@ -414,7 +505,10 @@ function scoreCategories(
     let weight = 0;
 
     for (const diagnostic of diagnostics) {
-      if (traits.get(diagnostic.rule)?.category === category && diagnostic.severity !== "info") {
+      if (
+        traits.get(diagnostic.rule)?.category === category &&
+        diagnostic.severity !== "info"
+      ) {
         weight += diagnostic.probability ?? 1;
       }
     }
@@ -424,7 +518,9 @@ function scoreCategories(
   }
 
   const values = Object.values(scores);
-  scores.overall = Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+  scores.overall = Math.round(
+    values.reduce((total, value) => total + value, 0) / values.length,
+  );
 
   return scores;
 }
@@ -434,7 +530,9 @@ function loadedTraitNotices(traits: Map<string, Trait>): string[] {
 
   for (const trait of traits.values()) {
     if (trait.check === "local" && !LOCAL_RULES.has(trait.name)) {
-      notices.push(`${trait.name} is a local rule the linter has no check for, so it was skipped.`);
+      notices.push(
+        `${trait.name} is a local rule the linter has no check for, so it was skipped.`,
+      );
     }
   }
 
@@ -445,7 +543,9 @@ export async function lint(options: LintOptions): Promise<LintResult> {
   const started = Date.now();
 
   const traits = new Map(
-    [...TRAITS].filter(([, trait]) => !(options.formatted && trait.skipWhenFormatted)),
+    [...TRAITS].filter(
+      ([, trait]) => !(options.formatted && trait.skipWhenFormatted),
+    ),
   );
 
   const context: Context = {
@@ -474,7 +574,9 @@ export async function lint(options: LintOptions): Promise<LintResult> {
   options.signal?.throwIfAborted();
 
   const { clef: clefConfig } = options;
-  const candidates = clefConfig ? withoutNamedTwice(await candidatesFor(linted, context), findings) : [];
+  const candidates = clefConfig
+    ? withoutNamedTwice(await candidatesFor(linted, context), findings)
+    : [];
 
   if (clefConfig && candidates.length > 0) {
     const { cache, problem } = await openAnswerCache();
@@ -484,8 +586,16 @@ export async function lint(options: LintOptions): Promise<LintResult> {
     }
 
     try {
-      const fileLines = new Map(linted.map(({ file, lines }) => [file.path, lines]));
-      const judged = await clefFindings(clefConfig, candidates, fileLines, cache, context);
+      const fileLines = new Map(
+        linted.map(({ file, lines }) => [file.path, lines]),
+      );
+      const judged = await clefFindings(
+        clefConfig,
+        candidates,
+        fileLines,
+        cache,
+        context,
+      );
       findings.push(...withoutNamedTwice(judged, judged));
     } finally {
       cache.close();
@@ -496,12 +606,20 @@ export async function lint(options: LintOptions): Promise<LintResult> {
 
   const { stats } = context;
   stats.files = linted.length;
-  stats.addedLines = linted.reduce((total, { file }) => total + file.added.size, 0);
-  stats.changedLines = linted.reduce((total, { file }) => total + file.changedLines, 0);
+  stats.addedLines = linted.reduce(
+    (total, { file }) => total + file.added.size,
+    0,
+  );
+  stats.changedLines = linted.reduce(
+    (total, { file }) => total + file.changedLines,
+    0,
+  );
   stats.candidates = candidates.length;
 
   if (stats.oversized > 0) {
-    context.notices.push(`${stats.oversized} candidates were too large for one Clef state and were skipped.`);
+    context.notices.push(
+      `${stats.oversized} candidates were too large for one Clef state and were skipped.`,
+    );
   }
 
   let clef: LintResult["clef"] = clefConfig ? "ok" : "off";

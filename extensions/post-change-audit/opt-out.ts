@@ -16,7 +16,8 @@ const CLEF_OPT_OUT_QUESTION: ClefQuestion = {
     "Does this message ask the agent to skip, not run, or not bother with the automatic code review or post-change audit of its work?",
   criteria: {
     true: "Asks to skip the review or audit",
-    false: "Does not ask to skip it; asking for a review, or mentioning reviews in another sense, is not skipping",
+    false:
+      "Does not ask to skip it; asking for a review, or mentioning reviews in another sense, is not skipping",
   },
 };
 
@@ -34,18 +35,23 @@ export interface OptOutDecision {
   clefError?: string;
 }
 
-export function startOptOutCheck(message: string, clef: ClefConfig | undefined, signal: AbortSignal): OptOutCheck {
+export function startOptOutCheck(
+  message: string,
+  clef: ClefConfig | undefined,
+  signal: AbortSignal,
+): OptOutCheck {
   const keyword = AUDIT_OPT_OUT.test(message);
 
-  if (
-    keyword ||
-    !clef ||
-    message.trim().length < CLEF_OPT_OUT_MIN_CHARS
-  ) {
+  if (keyword || !clef || message.trim().length < CLEF_OPT_OUT_MIN_CHARS) {
     return { keyword };
   }
 
-  const clefScore = askClef(clef, message, { optOut: CLEF_OPT_OUT_QUESTION }, signal).then(({ scores }) => scores.optOut);
+  const clefScore = askClef(
+    clef,
+    message,
+    { optOut: CLEF_OPT_OUT_QUESTION },
+    signal,
+  ).then(({ scores }) => scores.optOut);
   // The score is read only when the turn settles, which may never happen.
   clefScore.catch(() => undefined);
 
@@ -53,7 +59,9 @@ export function startOptOutCheck(message: string, clef: ClefConfig | undefined, 
 }
 
 // Clef can only add an opt-out to the keyword rule; an answer still pending after the wait counts as none.
-export async function decideOptOut(check: OptOutCheck): Promise<OptOutDecision> {
+export async function decideOptOut(
+  check: OptOutCheck,
+): Promise<OptOutDecision> {
   if (!check.clefScore) {
     return { optedOut: check.keyword };
   }

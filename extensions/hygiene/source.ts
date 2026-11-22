@@ -15,7 +15,11 @@ export interface SourceTree {
   countWord(word: string): Promise<number | undefined>;
 }
 
-export async function git(root: string, args: string[], signal?: AbortSignal): Promise<string> {
+export async function git(
+  root: string,
+  args: string[],
+  signal?: AbortSignal,
+): Promise<string> {
   const { stdout } = await execFileAsync("git", ["-C", root, ...args], {
     maxBuffer: MAX_BUFFER,
     timeout: GIT_TIMEOUT_MS,
@@ -26,7 +30,10 @@ export async function git(root: string, args: string[], signal?: AbortSignal): P
 }
 
 // Outside a repository the directory itself is the root.
-export async function repositoryRoot(dir: string, signal?: AbortSignal): Promise<string> {
+export async function repositoryRoot(
+  dir: string,
+  signal?: AbortSignal,
+): Promise<string> {
   try {
     return (await git(dir, ["rev-parse", "--show-toplevel"], signal)).trim();
   } catch {
@@ -79,7 +86,12 @@ export function sourceTree(root: string, ref?: string): SourceTree {
     listDir: async (dir) => {
       const prefix = dir === "." ? "" : `${dir}/`;
       const pathspec = prefix ? ["--", prefix] : [];
-      const listing = await git(root, ["ls-tree", "--name-only", ref, ...pathspec]).catch(() => "");
+      const listing = await git(root, [
+        "ls-tree",
+        "--name-only",
+        ref,
+        ...pathspec,
+      ]).catch(() => "");
 
       return listing
         .split("\n")

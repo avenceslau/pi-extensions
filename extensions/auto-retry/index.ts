@@ -7,7 +7,12 @@ import type {
 import { matchesKey } from "@earendil-works/pi-tui";
 import { isContextOverflow } from "@earendil-works/pi-ai";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { isForbiddenForSubagents, loadConfig, modelChainFromEnv, type ModelsConfig } from "../shared/config.ts";
+import {
+  isForbiddenForSubagents,
+  loadConfig,
+  modelChainFromEnv,
+  type ModelsConfig,
+} from "../shared/config.ts";
 
 // Replaces pi's built-in auto-retry: retries transient provider errors indefinitely with
 // capped exponential backoff and fails over to the next model when a provider is broken.
@@ -38,9 +43,15 @@ const WIDGET_KEY = "auto-retry";
 
 // Subagent sessions run in the parent's process, so a provider or model one session found
 // unavailable is skipped by every other session too. Keys are providers or `provider/modelId`.
-const UNAVAILABLE_SINCE_KEY = Symbol.for("pi-extensions/auto-retry/unavailable-since");
+const UNAVAILABLE_SINCE_KEY = Symbol.for(
+  "pi-extensions/auto-retry/unavailable-since",
+);
 
-export type FailureKind = "transient" | "model-unavailable" | "provider-unavailable" | "fatal";
+export type FailureKind =
+  | "transient"
+  | "model-unavailable"
+  | "provider-unavailable"
+  | "fatal";
 
 // `modelUnavailable` matches errors tied to the upstream behind one model, such as a gateway's 526, so other models
 // of the same provider may still work.
@@ -49,10 +60,7 @@ export function classifyFailure(
   contextWindow: number | undefined,
   modelUnavailable?: RegExp,
 ): FailureKind {
-  if (
-    message.stopReason !== "error" ||
-    !message.errorMessage
-  ) {
+  if (message.stopReason !== "error" || !message.errorMessage) {
     return "fatal";
   }
 
@@ -77,18 +85,30 @@ export function classifyFailure(
 }
 
 // Subagents never use a forbidden model, even when an env override lists it.
-export function failoverChain(models: ModelsConfig | undefined, isSubagent: boolean): string[] {
+export function failoverChain(
+  models: ModelsConfig | undefined,
+  isSubagent: boolean,
+): string[] {
   if (!isSubagent) {
-    return modelChainFromEnv(process.env.PI_FAILOVER_MODELS) ?? models?.primary ?? [];
+    return (
+      modelChainFromEnv(process.env.PI_FAILOVER_MODELS) ?? models?.primary ?? []
+    );
   }
 
-  const chain = modelChainFromEnv(process.env.PI_SUBAGENT_FAILOVER_MODELS) ?? models?.subagent ?? [];
+  const chain =
+    modelChainFromEnv(process.env.PI_SUBAGENT_FAILOVER_MODELS) ??
+    models?.subagent ??
+    [];
 
   return chain.filter((modelRef) => !isForbiddenForSubagents(models, modelRef));
 }
 
-function modelUnavailablePattern(models: ModelsConfig | undefined): RegExp | undefined {
-  return models?.unavailable === undefined ? undefined : new RegExp(models.unavailable);
+function modelUnavailablePattern(
+  models: ModelsConfig | undefined,
+): RegExp | undefined {
+  return models?.unavailable === undefined
+    ? undefined
+    : new RegExp(models.unavailable);
 }
 
 export function providerOf(modelRef: string): string {
@@ -106,10 +126,16 @@ export function failoverCandidates(
   currentModelRef: string | undefined,
   isUnavailable: (modelRef: string) => boolean,
 ): string[] {
-  const currentIndex = currentModelRef === undefined ? -1 : chain.indexOf(currentModelRef);
-  const rotated = [...chain.slice(currentIndex + 1), ...chain.slice(0, currentIndex + 1)];
+  const currentIndex =
+    currentModelRef === undefined ? -1 : chain.indexOf(currentModelRef);
+  const rotated = [
+    ...chain.slice(currentIndex + 1),
+    ...chain.slice(0, currentIndex + 1),
+  ];
 
-  return rotated.filter((modelRef) => modelRef !== currentModelRef && !isUnavailable(modelRef));
+  return rotated.filter(
+    (modelRef) => modelRef !== currentModelRef && !isUnavailable(modelRef),
+  );
 }
 
 export function retryDelayMs(attempt: number): number {
@@ -117,7 +143,9 @@ export function retryDelayMs(attempt: number): number {
 }
 
 function unavailableSince(): Map<string, number> {
-  const store = globalThis as typeof globalThis & { [UNAVAILABLE_SINCE_KEY]?: Map<string, number> };
+  const store = globalThis as typeof globalThis & {
+    [UNAVAILABLE_SINCE_KEY]?: Map<string, number>;
+  };
   store[UNAVAILABLE_SINCE_KEY] ??= new Map();
 
   return store[UNAVAILABLE_SINCE_KEY];
@@ -134,10 +162,14 @@ function isMarkedUnavailable(providerOrModelRef: string): boolean {
 }
 
 function isUnavailable(modelRef: string): boolean {
-  return isMarkedUnavailable(providerOf(modelRef)) || isMarkedUnavailable(modelRef);
+  return (
+    isMarkedUnavailable(providerOf(modelRef)) || isMarkedUnavailable(modelRef)
+  );
 }
 
-function modelRefOf(model: { provider: string; id: string } | undefined): string | undefined {
+function modelRefOf(
+  model: { provider: string; id: string } | undefined,
+): string | undefined {
   return model ? `${model.provider}/${model.id}` : undefined;
 }
 
@@ -173,7 +205,10 @@ export default function (pi: ExtensionAPI) {
   // Resolves true once the delay elapses, false when Esc, a queued user message, or session
   // shutdown cancels it. The run sits between turns here, so ctx.signal is undefined and a
   // queued message is the only sign of new user input.
-  const waitBeforeRetry = (delayMs: number, ctx: ExtensionContext): Promise<boolean> => {
+  const waitBeforeRetry = (
+    delayMs: number,
+    ctx: ExtensionContext,
+  ): Promise<boolean> => {
     return new Promise((resolve) => {
       const finish = (elapsed: boolean) => {
         clearTimeout(timer);
@@ -186,7 +221,10 @@ export default function (pi: ExtensionAPI) {
 
       const inputPoll = setInterval(() => {
         if (ctx.hasPendingMessages()) {
-          ctx.ui.notify("Cancelled pending auto-retry (new user message).", "info");
+          ctx.ui.notify(
+            "Cancelled pending auto-retry (new user message).",
+            "info",
+          );
           finish(false);
         }
       }, PENDING_INPUT_POLL_MS);
@@ -195,17 +233,26 @@ export default function (pi: ExtensionAPI) {
     });
   };
 
-  const switchToHealthyModel = async (ctx: ExtensionContext): Promise<Model<Api> | undefined> => {
+  const switchToHealthyModel = async (
+    ctx: ExtensionContext,
+  ): Promise<Model<Api> | undefined> => {
     const isSubagent = SUBAGENT_SESSION_NAME.test(pi.getSessionName() ?? "");
     const chain = failoverChain(loadConfig(pi).models, isSubagent);
 
-    for (const modelRef of failoverCandidates(chain, modelRefOf(ctx.model), isUnavailable)) {
+    for (const modelRef of failoverCandidates(
+      chain,
+      modelRefOf(ctx.model),
+      isUnavailable,
+    )) {
       // setModel failures below can mark a later candidate's provider.
       if (isUnavailable(modelRef)) {
         continue;
       }
 
-      const model = ctx.modelRegistry.find(providerOf(modelRef), modelIdOf(modelRef));
+      const model = ctx.modelRegistry.find(
+        providerOf(modelRef),
+        modelIdOf(modelRef),
+      );
 
       if (!model) {
         continue;
@@ -245,16 +292,16 @@ export default function (pi: ExtensionAPI) {
 
     lastAssistantMessage = event.message;
 
-    if (
-      event.message.stopReason === "error" ||
-      !state
-    ) {
+    if (event.message.stopReason === "error" || !state) {
       return;
     }
 
     if (event.message.stopReason !== "aborted") {
       const attempts = state.attempt;
-      ctx.ui.notify(`Recovered after ${attempts} retr${attempts === 1 ? "y" : "ies"}.`, "info");
+      ctx.ui.notify(
+        `Recovered after ${attempts} retr${attempts === 1 ? "y" : "ies"}.`,
+        "info",
+      );
     }
 
     reset(ctx);
@@ -272,11 +319,18 @@ export default function (pi: ExtensionAPI) {
     }
 
     const errorMessage = failed.errorMessage ?? "unknown error";
-    const kind = classifyFailure(failed, ctx.model?.contextWindow, modelUnavailablePattern(loadConfig(pi).models));
+    const kind = classifyFailure(
+      failed,
+      ctx.model?.contextWindow,
+      modelUnavailablePattern(loadConfig(pi).models),
+    );
 
     if (kind === "fatal") {
       if (state) {
-        ctx.ui.notify(`Stopping auto-retry: error is not transient (${errorMessage}).`, "error");
+        ctx.ui.notify(
+          `Stopping auto-retry: error is not transient (${errorMessage}).`,
+          "error",
+        );
         reset(ctx);
       }
 
@@ -353,7 +407,10 @@ export default function (pi: ExtensionAPI) {
       `Transient error: ${errorMessage}. Retrying in ${formatSeconds(delayMs)} (attempt ${state.attempt}${capped}).`,
       "warning",
     );
-    ctx.ui.setStatus(STATUS_KEY, `↻ retry #${state.attempt} in ${formatSeconds(delayMs)}${capped}`);
+    ctx.ui.setStatus(
+      STATUS_KEY,
+      `↻ retry #${state.attempt} in ${formatSeconds(delayMs)}${capped}`,
+    );
     ctx.ui.setWidget(WIDGET_KEY, [
       "↻ Transient provider error — auto-retry",
       `   attempt ${state.attempt} · waiting ${formatSeconds(delayMs)}${capped} · ${errorMessage}`,
@@ -387,7 +444,9 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (message.role === "assistant" && message.stopReason === "error") {
-        return classifyFailure(message, contextWindow, modelUnavailable) === "fatal";
+        return (
+          classifyFailure(message, contextWindow, modelUnavailable) === "fatal"
+        );
       }
 
       return true;

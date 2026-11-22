@@ -21,7 +21,9 @@ export async function selectReviews(
     return undefined;
   }
 
-  const working = new Set([...selected].filter((key) => reviews.some((review) => review.key === key)));
+  const working = new Set(
+    [...selected].filter((key) => reviews.some((review) => review.key === key)),
+  );
 
   return ctx.ui.custom<Set<string>>((tui, theme, _keybindings, done) => {
     const items: SettingItem[] = reviews.map((review) => ({
@@ -33,7 +35,11 @@ export async function selectReviews(
 
     const container = new Container();
     container.addChild(
-      new Text(theme.fg("accent", theme.bold("Select reviews for Shepherd")), 1, 1),
+      new Text(
+        theme.fg("accent", theme.bold("Select reviews for Shepherd")),
+        1,
+        1,
+      ),
     );
 
     const settings = new SettingsList(
@@ -54,7 +60,10 @@ export async function selectReviews(
     container.addChild(settings);
     container.addChild(
       new Text(
-        theme.fg("dim", "Enter toggles · type to search · Esc accepts selection"),
+        theme.fg(
+          "dim",
+          "Enter toggles · type to search · Esc accepts selection",
+        ),
         1,
         0,
       ),

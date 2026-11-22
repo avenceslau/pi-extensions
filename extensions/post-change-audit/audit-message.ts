@@ -1,4 +1,8 @@
-import { highlightCode, type MessageRenderer, type Theme } from "@earendil-works/pi-coding-agent";
+import {
+  highlightCode,
+  type MessageRenderer,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
@@ -27,32 +31,50 @@ const SEVERITY_COLORS = {
   info: "muted",
 } as const;
 
-const COLUMNS = [
-  "id",
-  "line",
-  "sev",
-  "rule",
-  "msg",
-  "fix",
-];
+const COLUMNS = ["id", "line", "sev", "rule", "msg", "fix"];
 
 // The message the main agent reads, kept small because it stays in context for every later turn:
 // diagnostics are rows under one header, grouped by file, and empty fields are left out.
 export const AuditMessageSchema = Type.Object({
   type: Type.Literal(AUDIT_MESSAGE_TYPE),
-  round: Type.Optional(Type.Number({ description: "Automatic fix round, starting at 1" })),
+  round: Type.Optional(
+    Type.Number({ description: "Automatic fix round, starting at 1" }),
+  ),
   pullRequest: Type.Optional(Type.String()),
   instructions: Type.String(),
-  error: Type.Optional(Type.String({ description: "Why the review did not complete" })),
-  cols: Type.Optional(Type.Array(Type.String(), { description: "Names of the cells in each row of d" })),
-  d: Type.Optional(
-    Type.Record(Type.String(), Type.Array(Type.Array(Type.Union([Type.String(), Type.Number()]), { minItems: 5 })), {
-      description: "Diagnostic rows by file; line is a number or line:column-endLine, sev is e, w, or i; trailing unset cells are left out",
+  error: Type.Optional(
+    Type.String({ description: "Why the review did not complete" }),
+  ),
+  cols: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Names of the cells in each row of d",
     }),
   ),
-  clean: Type.Optional(Type.Array(Type.String(), { description: "Reviewers that reported no findings" })),
-  reviewers: Type.Optional(Type.Array(ReviewerStatusSchema, { description: "Reviewers with more to say than their diagnostics" })),
-  settledDecisions: Type.Optional(Type.Array(Type.Omit(LedgerEntrySchema, ["id"]))),
+  d: Type.Optional(
+    Type.Record(
+      Type.String(),
+      Type.Array(
+        Type.Array(Type.Union([Type.String(), Type.Number()]), { minItems: 5 }),
+      ),
+      {
+        description:
+          "Diagnostic rows by file; line is a number or line:column-endLine, sev is e, w, or i; trailing unset cells are left out",
+      },
+    ),
+  ),
+  clean: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Reviewers that reported no findings",
+    }),
+  ),
+  reviewers: Type.Optional(
+    Type.Array(ReviewerStatusSchema, {
+      description: "Reviewers with more to say than their diagnostics",
+    }),
+  ),
+  settledDecisions: Type.Optional(
+    Type.Array(Type.Omit(LedgerEntrySchema, ["id"])),
+  ),
 });
 
 // Only renderers see details.
@@ -83,10 +105,7 @@ function nonEmpty<T>(items: T[] | undefined): T[] | undefined {
 }
 
 function lineCell({ line, column, endLine }: Diagnostic): number | string {
-  if (
-    column === undefined &&
-    endLine === undefined
-  ) {
+  if (column === undefined && endLine === undefined) {
     return line;
   }
 
@@ -100,7 +119,10 @@ function trimFix(fix: string): string {
     return fix;
   }
 
-  return [...lines.slice(0, MAX_FIX_LINES), `… ${lines.length - MAX_FIX_LINES} more lines`].join("\n");
+  return [
+    ...lines.slice(0, MAX_FIX_LINES),
+    `… ${lines.length - MAX_FIX_LINES} more lines`,
+  ].join("\n");
 }
 
 export function serializeAuditMessage(input: AuditMessageInput): {
@@ -108,7 +130,9 @@ export function serializeAuditMessage(input: AuditMessageInput): {
   details: AuditDetails;
 } {
   const diagnostics = input.diagnostics ?? [];
-  const inStack = diagnostics.some((diagnostic) => diagnostic.frame !== undefined);
+  const inStack = diagnostics.some(
+    (diagnostic) => diagnostic.frame !== undefined,
+  );
   const rows: Record<string, (string | number)[][]> = {};
 
   for (const diagnostic of diagnostics) {
@@ -123,10 +147,7 @@ export function serializeAuditMessage(input: AuditMessageInput): {
     ];
 
     // Unset trailing cells are dropped; every cell before fix is always set.
-    while (
-      cells.length > COLUMNS.length - 1 &&
-      cells.at(-1) === ""
-    ) {
+    while (cells.length > COLUMNS.length - 1 && cells.at(-1) === "") {
       cells.pop();
     }
 
@@ -173,7 +194,8 @@ function parseAuditMessage(content: unknown): AuditMessage | undefined {
 
 function location(diagnostic: Diagnostic): string {
   const column = diagnostic.column === undefined ? "" : `:${diagnostic.column}`;
-  const frame = diagnostic.frame === undefined ? "" : ` (frame ${diagnostic.frame})`;
+  const frame =
+    diagnostic.frame === undefined ? "" : ` (frame ${diagnostic.frame})`;
 
   return `${diagnostic.file}:${diagnostic.line}${column}${frame}`;
 }
@@ -183,17 +205,19 @@ function diagnosticLines(
   expanded: boolean,
   theme: Theme,
 ): string[] {
-  const width = Math.max(...diagnostics.map((diagnostic) => location(diagnostic).length));
+  const width = Math.max(
+    ...diagnostics.map((diagnostic) => location(diagnostic).length),
+  );
   const lines: string[] = [];
   diagnostics.forEach((diagnostic, i) => {
-    if (
-      i > 0 &&
-      diagnostics[i - 1]?.file !== diagnostic.file
-    ) {
+    if (i > 0 && diagnostics[i - 1]?.file !== diagnostic.file) {
       lines.push("");
     }
 
-    const severity = theme.fg(SEVERITY_COLORS[diagnostic.severity], diagnostic.severity.padEnd(7));
+    const severity = theme.fg(
+      SEVERITY_COLORS[diagnostic.severity],
+      diagnostic.severity.padEnd(7),
+    );
     lines.push(
       `${location(diagnostic).padEnd(width)}  ${severity}  ${diagnostic.message}  ${theme.fg("dim", `${diagnostic.rule} ${diagnostic.id}`)}`,
     );
@@ -214,9 +238,10 @@ function diagnosticLines(
 }
 
 function reviewerLines(reviewer: ReviewerStatus, theme: Theme): string[] {
-  const status = reviewer.status === "reported" && !reviewer.clean
-    ? "not clean"
-    : reviewer.status;
+  const status =
+    reviewer.status === "reported" && !reviewer.clean
+      ? "not clean"
+      : reviewer.status;
 
   const details = [
     ...(reviewer.text?.split("\n") ?? []),
@@ -239,8 +264,13 @@ function summaryLine(
     return theme.fg("error", `✖ did not complete: ${audit.error}`);
   }
 
-  const unreported = audit.reviewers?.filter((reviewer) => reviewer.status !== "reported").length ?? 0;
-  const suffix = unreported === 0 ? "" : `, ${unreported} reviewer${unreported === 1 ? "" : "s"} without a report`;
+  const unreported =
+    audit.reviewers?.filter((reviewer) => reviewer.status !== "reported")
+      .length ?? 0;
+  const suffix =
+    unreported === 0
+      ? ""
+      : `, ${unreported} reviewer${unreported === 1 ? "" : "s"} without a report`;
 
   if (diagnostics.length === 0) {
     return unreported === 0
@@ -249,19 +279,30 @@ function summaryLine(
   }
 
   const counts = (["error", "warning", "info"] as const).flatMap((severity) => {
-    const count = diagnostics.filter((diagnostic) => diagnostic.severity === severity).length;
+    const count = diagnostics.filter(
+      (diagnostic) => diagnostic.severity === severity,
+    ).length;
 
     if (count === 0) {
       return [];
     }
 
-    return [`${count} ${severity}${count === 1 || severity === "info" ? "" : "s"}`];
+    return [
+      `${count} ${severity}${count === 1 || severity === "info" ? "" : "s"}`,
+    ];
   });
 
-  const color = diagnostics.some((diagnostic) => diagnostic.severity === "error") ? "error" : "warning";
+  const color = diagnostics.some(
+    (diagnostic) => diagnostic.severity === "error",
+  )
+    ? "error"
+    : "warning";
   const total = diagnostics.length;
 
-  return theme.fg(color, `✖ ${total} problem${total === 1 ? "" : "s"} (${counts.join(", ")})${suffix}`);
+  return theme.fg(
+    color,
+    `✖ ${total} problem${total === 1 ? "" : "s"} (${counts.join(", ")})${suffix}`,
+  );
 }
 
 function messageTitle(audit: AuditMessage): string {
@@ -277,13 +318,14 @@ function messageTitle(audit: AuditMessage): string {
 }
 
 // Returning undefined falls back to pi's default rendering of the raw content, which older sessions need.
-export const renderAuditMessage: MessageRenderer = (message, options, theme) => {
+export const renderAuditMessage: MessageRenderer = (
+  message,
+  options,
+  theme,
+) => {
   const audit = parseAuditMessage(message.content);
 
-  if (
-    !audit ||
-    !Value.Check(AuditDetailsSchema, message.details)
-  ) {
+  if (!audit || !Value.Check(AuditDetailsSchema, message.details)) {
     return undefined;
   }
 
@@ -294,9 +336,15 @@ export const renderAuditMessage: MessageRenderer = (message, options, theme) => 
     body.push(theme.fg("dim", `clean: ${audit.clean.join(", ")}`));
   }
 
-  body.push(...(audit.reviewers ?? []).flatMap((reviewer) => reviewerLines(reviewer, theme)));
+  body.push(
+    ...(audit.reviewers ?? []).flatMap((reviewer) =>
+      reviewerLines(reviewer, theme),
+    ),
+  );
 
-  const lines = [theme.fg("customMessageLabel", theme.bold(messageTitle(audit)))];
+  const lines = [
+    theme.fg("customMessageLabel", theme.bold(messageTitle(audit))),
+  ];
 
   if (options.expanded) {
     lines.push(
@@ -310,14 +358,22 @@ export const renderAuditMessage: MessageRenderer = (message, options, theme) => 
   } else {
     const hidden = body.length - COLLAPSED_LINES;
 
-    const hint = hidden > 0
-      ? `${theme.fg("dim", `… ${hidden} more lines, `)}${options.keyHint("app.tools.expand", "to expand")}`
-      : options.keyHint("app.tools.expand", "to show the JSON");
+    const hint =
+      hidden > 0
+        ? `${theme.fg("dim", `… ${hidden} more lines, `)}${options.keyHint("app.tools.expand", "to expand")}`
+        : options.keyHint("app.tools.expand", "to show the JSON");
 
-    lines.push(...body.slice(0, COLLAPSED_LINES), hint, "", summaryLine(audit, diagnostics, theme));
+    lines.push(
+      ...body.slice(0, COLLAPSED_LINES),
+      hint,
+      "",
+      summaryLine(audit, diagnostics, theme),
+    );
   }
 
-  const box = new Box(options.outputPad, 1, (text) => theme.bg("customMessageBg", text));
+  const box = new Box(options.outputPad, 1, (text) =>
+    theme.bg("customMessageBg", text),
+  );
   box.addChild(new Text(lines.join("\n"), 0, 0));
 
   return box;

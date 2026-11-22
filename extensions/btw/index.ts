@@ -160,10 +160,8 @@ export default function (pi: ExtensionAPI) {
               !candidate.answer.trim() ||
               typeof candidate.targetPaneId !== "string" ||
               typeof candidate.targetSessionId !== "string" ||
-              (
-                candidate.sourceSessionPath !== undefined &&
-                typeof candidate.sourceSessionPath !== "string"
-              )
+              (candidate.sourceSessionPath !== undefined &&
+                typeof candidate.sourceSessionPath !== "string")
             ) {
               throw new Error("payload has an invalid shape");
             }
@@ -211,7 +209,8 @@ export default function (pi: ExtensionAPI) {
             ctx.ui.notify("Merged BTW answer", "info");
           } catch (error) {
             await unlink(path).catch(() => undefined);
-            const message = error instanceof Error ? error.message : String(error);
+            const message =
+              error instanceof Error ? error.message : String(error);
             ctx.ui.notify(`Discarded BTW merge ${file}: ${message}`, "warning");
           }
         }
@@ -241,7 +240,11 @@ export default function (pi: ExtensionAPI) {
     merged = false;
 
     for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type !== "custom" || typeof entry.data !== "object" || !entry.data) {
+      if (
+        entry.type !== "custom" ||
+        typeof entry.data !== "object" ||
+        !entry.data
+      ) {
         continue;
       }
 
@@ -258,7 +261,8 @@ export default function (pi: ExtensionAPI) {
 
       if (
         entry.customType === "btw-merged" &&
-        (entry.data as { childSessionId?: unknown }).childSessionId === currentSessionId
+        (entry.data as { childSessionId?: unknown }).childSessionId ===
+          currentSessionId
       ) {
         merged = true;
       }
@@ -277,11 +281,7 @@ export default function (pi: ExtensionAPI) {
       pi.appendEntry("btw-child", childState);
     }
 
-    if (
-      ctx.mode !== "tui" ||
-      HERDR_ENV !== "1" ||
-      !HERDR_PANE_ID
-    ) {
+    if (ctx.mode !== "tui" || HERDR_ENV !== "1" || !HERDR_PANE_ID) {
       return;
     }
 
@@ -346,11 +346,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      if (
-        ctx.mode !== "tui" ||
-        HERDR_ENV !== "1" ||
-        !HERDR_PANE_ID
-      ) {
+      if (ctx.mode !== "tui" || HERDR_ENV !== "1" || !HERDR_PANE_ID) {
         ctx.ui.notify("/btw requires Pi to be running inside Herdr", "error");
 
         return;
@@ -365,10 +361,15 @@ export default function (pi: ExtensionAPI) {
       }
 
       // The side session runs on the configured model, or on the parent's.
-      const model = loadConfig(pi).models?.extensions?.btw ?? (ctx.model && `${ctx.model.provider}/${ctx.model.id}`);
+      const model =
+        loadConfig(pi).models?.extensions?.btw ??
+        (ctx.model && `${ctx.model.provider}/${ctx.model.id}`);
 
       if (!model) {
-        ctx.ui.notify("/btw needs a model: select one, or set models.extensions.btw in ~/.pi/agent/pi-extensions.ts", "error");
+        ctx.ui.notify(
+          "/btw needs a model: select one, or set models.extensions.btw in ~/.pi/agent/pi-extensions.ts",
+          "error",
+        );
 
         return;
       }
@@ -409,7 +410,10 @@ export default function (pi: ExtensionAPI) {
       const created = await pi.exec("herdr", createArgs, { timeout: 5000 });
 
       if (created.code !== 0) {
-        ctx.ui.notify(created.stderr.trim() || "Could not create BTW pane", "error");
+        ctx.ui.notify(
+          created.stderr.trim() || "Could not create BTW pane",
+          "error",
+        );
 
         return;
       }
@@ -442,15 +446,25 @@ export default function (pi: ExtensionAPI) {
         '"$BTW_QUESTION"',
       ].join(" ");
 
-      const started = await pi.exec("herdr", ["pane", "run", paneId, childCommand], {
-        timeout: 5000,
-      });
+      const started = await pi.exec(
+        "herdr",
+        ["pane", "run", paneId, childCommand],
+        {
+          timeout: 5000,
+        },
+      );
 
       if (started.code !== 0 && !started.killed) {
         await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5000 });
-        ctx.ui.notify(started.stderr.trim() || "Could not start BTW Pi session", "error");
+        ctx.ui.notify(
+          started.stderr.trim() || "Could not start BTW Pi session",
+          "error",
+        );
       } else if (started.killed) {
-        ctx.ui.notify("BTW pane was created, but Pi startup could not be confirmed", "warning");
+        ctx.ui.notify(
+          "BTW pane was created, but Pi startup could not be confirmed",
+          "warning",
+        );
       }
     },
   });
@@ -467,13 +481,19 @@ export default function (pi: ExtensionAPI) {
         childState.childSessionId !== ctx.sessionManager.getSessionId() ||
         childState.parentSessionId !== BTW_PARENT_SESSION_ID
       ) {
-        ctx.ui.notify("/merge is only available in a BTW child session", "error");
+        ctx.ui.notify(
+          "/merge is only available in a BTW child session",
+          "error",
+        );
 
         return;
       }
 
       if (!ctx.isIdle()) {
-        ctx.ui.notify("Wait for the BTW answer to finish before merging", "warning");
+        ctx.ui.notify(
+          "Wait for the BTW answer to finish before merging",
+          "warning",
+        );
 
         return;
       }
@@ -508,7 +528,10 @@ export default function (pi: ExtensionAPI) {
           }
 
           answer = entry.message.content
-            .filter((part): part is { type: "text"; text: string } => part.type === "text")
+            .filter(
+              (part): part is { type: "text"; text: string } =>
+                part.type === "text",
+            )
             .map((part) => part.text)
             .join("\n")
             .trim();
@@ -520,7 +543,10 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (!answer) {
-        ctx.ui.notify("No BTW answer found. Use /merge <text> to merge explicit text.", "error");
+        ctx.ui.notify(
+          "No BTW answer found. Use /merge <text> to merge explicit text.",
+          "error",
+        );
 
         return;
       }

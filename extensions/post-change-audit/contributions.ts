@@ -51,7 +51,8 @@ export function collectContributions(pi: ExtensionAPI): AuditContributions {
 
   const request: AuditContributionRequest = {
     addAuditor: (auditor) => contributions.auditors.push(auditor),
-    addCorrectnessContext: (provider) => contributions.correctnessContexts.push(provider),
+    addCorrectnessContext: (provider) =>
+      contributions.correctnessContexts.push(provider),
   };
 
   pi.events.emit(CONTRIBUTIONS_CHANNEL, request);

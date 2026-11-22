@@ -3,9 +3,12 @@ import type { Trait } from "../../traits.ts";
 export default {
   name: "code-restraint/comment",
   version: 1,
-  subject: "A comment this change added, or one it left as it was directly above or inside code it edited, shown inside the function or statement around it.",
-  requirement: "Assume the comment should not exist. Keep it only when it carries something the code cannot express: an external constraint, a linked bug or ticket, a specification or protocol detail, or the reason for a counterintuitive choice. A comment the change left next to code it edited must also still describe that code exactly.",
-  purpose: "The code should say what it does; a comment that repeats or explains it goes stale and buries the comments that matter.",
+  subject:
+    "A comment this change added, or one it left as it was directly above or inside code it edited, shown inside the function or statement around it.",
+  requirement:
+    "Assume the comment should not exist. Keep it only when it carries something the code cannot express: an external constraint, a linked bug or ticket, a specification or protocol detail, or the reason for a counterintuitive choice. A comment the change left next to code it edited must also still describe that code exactly.",
+  purpose:
+    "The code should say what it does; a comment that repeats or explains it goes stale and buries the comments that matter.",
   candidate: "comment",
   check: "agent",
   category: "comments",

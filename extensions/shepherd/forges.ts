@@ -4,7 +4,13 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { Forge, RetryTarget, Review, ReviewStatus, WorktreeRecord } from "./types.ts";
+import type {
+  Forge,
+  RetryTarget,
+  Review,
+  ReviewStatus,
+  WorktreeRecord,
+} from "./types.ts";
 
 interface RepositoryGroup {
   cwd: string;
@@ -47,7 +53,9 @@ async function readWorktrees(): Promise<WorktreeRecord[]> {
   });
 }
 
-function remoteParts(remote: string): { host: string; path: string } | undefined {
+function remoteParts(
+  remote: string,
+): { host: string; path: string } | undefined {
   const ssh = remote.match(/^(?:ssh:\/\/)?git@([^:/]+)[:/](.+)$/);
 
   if (ssh) {
@@ -79,10 +87,14 @@ async function repositoryGroups(pi: ExtensionAPI): Promise<RepositoryGroup[]> {
     [...byRepository.entries()].map(async ([repository, worktrees]) => {
       const cwd = existsSync(repository) ? repository : worktrees[0].path;
 
-      const remoteResult = await pi.exec("git", ["remote", "get-url", "origin"], {
-        cwd,
-        timeout: 10_000,
-      });
+      const remoteResult = await pi.exec(
+        "git",
+        ["remote", "get-url", "origin"],
+        {
+          cwd,
+          timeout: 10_000,
+        },
+      );
 
       return remoteResult.code === 0
         ? { remote: remoteResult.stdout.trim(), worktrees }
@@ -119,7 +131,12 @@ async function repositoryGroups(pi: ExtensionAPI): Promise<RepositoryGroup[]> {
       host: parts.host,
       label: parts.path,
       forge: parts.host.toLowerCase().includes("github") ? "github" : "gitlab",
-      worktrees: new Map(repository.worktrees.map((worktree) => [worktree.branch, worktree.path])),
+      worktrees: new Map(
+        repository.worktrees.map((worktree) => [
+          worktree.branch,
+          worktree.path,
+        ]),
+      ),
     });
   }
 
@@ -134,7 +151,10 @@ function parseJson<T>(text: string): T | undefined {
   }
 }
 
-function githubCheckStatus(checks: unknown[]): { status: ReviewStatus; summary: string } {
+function githubCheckStatus(checks: unknown[]): {
+  status: ReviewStatus;
+  summary: string;
+} {
   if (checks.length === 0) {
     return { status: "waiting", summary: "no checks" };
   }
@@ -142,23 +162,44 @@ function githubCheckStatus(checks: unknown[]): { status: ReviewStatus; summary: 
   const values = checks.map((check) => {
     const value = check as Record<string, unknown>;
 
-    return String(value.conclusion ?? value.state ?? value.status ?? "").toUpperCase();
+    return String(
+      value.conclusion ?? value.state ?? value.status ?? "",
+    ).toUpperCase();
   });
 
   const failed = values.filter((value) => {
-    return ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE"].includes(value);
+    return [
+      "FAILURE",
+      "ERROR",
+      "TIMED_OUT",
+      "CANCELLED",
+      "STARTUP_FAILURE",
+    ].includes(value);
   }).length;
 
   if (failed > 0) {
-    return { status: "actionable", summary: `${failed} failed check${failed === 1 ? "" : "s"}` };
+    return {
+      status: "actionable",
+      summary: `${failed} failed check${failed === 1 ? "" : "s"}`,
+    };
   }
 
   const pending = values.filter((value) => {
-    return ["PENDING", "EXPECTED", "IN_PROGRESS", "QUEUED", "WAITING", "REQUESTED"].includes(value);
+    return [
+      "PENDING",
+      "EXPECTED",
+      "IN_PROGRESS",
+      "QUEUED",
+      "WAITING",
+      "REQUESTED",
+    ].includes(value);
   }).length;
 
   if (pending > 0) {
-    return { status: "waiting", summary: `${pending} check${pending === 1 ? "" : "s"} running` };
+    return {
+      status: "waiting",
+      summary: `${pending} check${pending === 1 ? "" : "s"} running`,
+    };
   }
 
   return { status: "ready", summary: "checks passing" };
@@ -184,7 +225,11 @@ async function listGitHubReviews(
   );
 
   if (result.code !== 0) {
-    return { reviews: [], warning: result.stderr.trim() || `Unable to list ${group.label} pull requests` };
+    return {
+      reviews: [],
+      warning:
+        result.stderr.trim() || `Unable to list ${group.label} pull requests`,
+    };
   }
 
   const rows = parseJson<Array<Record<string, unknown>>>(result.stdout) ?? [];
@@ -198,12 +243,16 @@ async function listGitHubReviews(
       continue;
     }
 
-    const checks = Array.isArray(row.statusCheckRollup) ? row.statusCheckRollup : [];
+    const checks = Array.isArray(row.statusCheckRollup)
+      ? row.statusCheckRollup
+      : [];
     let status = githubCheckStatus(checks);
 
     if (String(row.mergeStateStatus).toUpperCase() === "DIRTY") {
       status = { status: "actionable", summary: "merge conflict" };
-    } else if (String(row.reviewDecision).toUpperCase() === "CHANGES_REQUESTED") {
+    } else if (
+      String(row.reviewDecision).toUpperCase() === "CHANGES_REQUESTED"
+    ) {
       status = { status: "actionable", summary: "changes requested" };
     } else if (row.isDraft === true) {
       status = { status: "waiting", summary: "draft" };
@@ -235,14 +284,19 @@ async function gitLabPipelineStatus(
   cwd: string,
   branch: string,
 ): Promise<{ status: ReviewStatus; summary: string } | undefined> {
-  const result = await pi.exec("glab", ["ci", "status", "--branch", branch, "--output", "json"], {
-    cwd,
-    timeout: 30_000,
-  });
-
-  const value = parseJson<{ jobs?: Array<Record<string, unknown>>; pipeline?: Record<string, unknown> }>(
-    result.stdout,
+  const result = await pi.exec(
+    "glab",
+    ["ci", "status", "--branch", branch, "--output", "json"],
+    {
+      cwd,
+      timeout: 30_000,
+    },
   );
+
+  const value = parseJson<{
+    jobs?: Array<Record<string, unknown>>;
+    pipeline?: Record<string, unknown>;
+  }>(result.stdout);
 
   if (!value?.pipeline) {
     return undefined;
@@ -255,20 +309,35 @@ async function gitLabPipelineStatus(
   }).length;
 
   if (failed > 0) {
-    return { status: "actionable", summary: `${failed} failed job${failed === 1 ? "" : "s"}` };
+    return {
+      status: "actionable",
+      summary: `${failed} failed job${failed === 1 ? "" : "s"}`,
+    };
   }
 
   const pending = jobs.filter((job) => {
-    return ["created", "pending", "running", "waiting_for_resource", "preparing"].includes(String(job.status));
+    return [
+      "created",
+      "pending",
+      "running",
+      "waiting_for_resource",
+      "preparing",
+    ].includes(String(job.status));
   }).length;
 
   if (pending > 0) {
-    return { status: "waiting", summary: `${pending} job${pending === 1 ? "" : "s"} running` };
+    return {
+      status: "waiting",
+      summary: `${pending} job${pending === 1 ? "" : "s"} running`,
+    };
   }
 
   return String(value.pipeline.status) === "success"
     ? { status: "ready", summary: "pipeline passing" }
-    : { status: "waiting", summary: `pipeline ${String(value.pipeline.status)}` };
+    : {
+        status: "waiting",
+        summary: `pipeline ${String(value.pipeline.status)}`,
+      };
 }
 
 async function listGitLabReviews(
@@ -276,17 +345,27 @@ async function listGitLabReviews(
   group: RepositoryGroup,
   detailedReviews: ReadonlySet<string>,
 ): Promise<{ reviews: Review[]; warning?: string }> {
-  const result = await pi.exec("glab", ["mr", "list", "--output", "json", "--per-page", "100"], {
-    cwd: group.cwd,
-    timeout: 30_000,
-  });
+  const result = await pi.exec(
+    "glab",
+    ["mr", "list", "--output", "json", "--per-page", "100"],
+    {
+      cwd: group.cwd,
+      timeout: 30_000,
+    },
+  );
 
   if (result.code !== 0) {
-    return { reviews: [], warning: result.stderr.trim() || `Unable to list ${group.label} merge requests` };
+    return {
+      reviews: [],
+      warning:
+        result.stderr.trim() || `Unable to list ${group.label} merge requests`,
+    };
   }
 
   const rows = parseJson<Array<Record<string, unknown>>>(result.stdout) ?? [];
-  const matched = rows.filter((row) => group.worktrees.has(String(row.source_branch ?? "")));
+  const matched = rows.filter((row) =>
+    group.worktrees.has(String(row.source_branch ?? "")),
+  );
 
   const reviews = await Promise.all(
     matched.map(async (row): Promise<Review> => {
@@ -345,28 +424,52 @@ export async function discoverReviews(
   );
 
   return {
-    reviews: results.flatMap((result) => result.reviews).sort((a, b) => a.key.localeCompare(b.key)),
-    warnings: results.flatMap((result) => (result.warning ? [result.warning] : [])),
+    reviews: results
+      .flatMap((result) => result.reviews)
+      .sort((a, b) => a.key.localeCompare(b.key)),
+    warnings: results.flatMap((result) =>
+      result.warning ? [result.warning] : [],
+    ),
   };
 }
 
-export async function worktreeFingerprint(pi: ExtensionAPI, cwd: string): Promise<string> {
+export async function worktreeFingerprint(
+  pi: ExtensionAPI,
+  cwd: string,
+): Promise<string> {
   const [head, status, unstaged, staged, untracked] = await Promise.all([
     pi.exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 }),
-    pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd, timeout: 10_000 }),
+    pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+      cwd,
+      timeout: 10_000,
+    }),
     pi.exec("git", ["diff", "--binary", "HEAD"], { cwd, timeout: 10_000 }),
-    pi.exec("git", ["diff", "--binary", "--cached", "HEAD"], { cwd, timeout: 10_000 }),
-    pi.exec("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd, timeout: 10_000 }),
+    pi.exec("git", ["diff", "--binary", "--cached", "HEAD"], {
+      cwd,
+      timeout: 10_000,
+    }),
+    pi.exec("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+      cwd,
+      timeout: 10_000,
+    }),
   ]);
 
-  const failed = [head, status, unstaged, staged, untracked].find((result) => result.code !== 0);
+  const failed = [head, status, unstaged, staged, untracked].find(
+    (result) => result.code !== 0,
+  );
 
   if (failed) {
-    throw new Error(failed.stderr.trim() || `Unable to inspect worktree ${cwd}`);
+    throw new Error(
+      failed.stderr.trim() || `Unable to inspect worktree ${cwd}`,
+    );
   }
 
   const hash = createHash("sha256");
-  hash.update([head.stdout.trim(), status.stdout, unstaged.stdout, staged.stdout].join("\n---\n"));
+  hash.update(
+    [head.stdout.trim(), status.stdout, unstaged.stdout, staged.stdout].join(
+      "\n---\n",
+    ),
+  );
 
   for (const path of untracked.stdout.split("\0").filter(Boolean)) {
     hash.update(path);
@@ -376,8 +479,14 @@ export async function worktreeFingerprint(pi: ExtensionAPI, cwd: string): Promis
   return hash.digest("hex");
 }
 
-export async function cleanWorktree(pi: ExtensionAPI, cwd: string): Promise<boolean> {
-  const result = await pi.exec("git", ["status", "--porcelain=v1"], { cwd, timeout: 10_000 });
+export async function cleanWorktree(
+  pi: ExtensionAPI,
+  cwd: string,
+): Promise<boolean> {
+  const result = await pi.exec("git", ["status", "--porcelain=v1"], {
+    cwd,
+    timeout: 10_000,
+  });
 
   return result.code === 0 && result.stdout.trim().length === 0;
 }
@@ -386,10 +495,14 @@ export async function worktreeBlockedReason(
   pi: ExtensionAPI,
   cwd: string,
 ): Promise<string | undefined> {
-  const unmerged = await pi.exec("git", ["diff", "--name-only", "--diff-filter=U"], {
-    cwd,
-    timeout: 10_000,
-  });
+  const unmerged = await pi.exec(
+    "git",
+    ["diff", "--name-only", "--diff-filter=U"],
+    {
+      cwd,
+      timeout: 10_000,
+    },
+  );
 
   const hasUnmerged = unmerged.stdout.trim().length > 0;
 
@@ -408,7 +521,11 @@ export async function worktreeBlockedReason(
 
     const path = result.stdout.trim();
 
-    if (result.code === 0 && path && existsSync(isAbsolute(path) ? path : resolve(cwd, path))) {
+    if (
+      result.code === 0 &&
+      path &&
+      existsSync(isAbsolute(path) ? path : resolve(cwd, path))
+    ) {
       return hasUnmerged ? `${reason} with unresolved conflicts` : reason;
     }
   }
@@ -416,8 +533,14 @@ export async function worktreeBlockedReason(
   return hasUnmerged ? "unresolved merge conflicts" : undefined;
 }
 
-export async function currentHead(pi: ExtensionAPI, cwd: string): Promise<string> {
-  const result = await pi.exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 });
+export async function currentHead(
+  pi: ExtensionAPI,
+  cwd: string,
+): Promise<string> {
+  const result = await pi.exec("git", ["rev-parse", "HEAD"], {
+    cwd,
+    timeout: 10_000,
+  });
 
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || `Unable to read HEAD in ${cwd}`);
@@ -426,7 +549,10 @@ export async function currentHead(pi: ExtensionAPI, cwd: string): Promise<string
   return result.stdout.trim();
 }
 
-export async function retryTargets(pi: ExtensionAPI, review: Review): Promise<RetryTarget[]> {
+export async function retryTargets(
+  pi: ExtensionAPI,
+  review: Review,
+): Promise<RetryTarget[]> {
   if (review.forge === "github") {
     const result = await pi.exec(
       "gh",
@@ -446,7 +572,9 @@ export async function retryTargets(pi: ExtensionAPI, review: Review): Promise<Re
     );
 
     if (result.code !== 0) {
-      throw new Error(result.stderr.trim() || "Unable to list GitHub workflow runs");
+      throw new Error(
+        result.stderr.trim() || "Unable to list GitHub workflow runs",
+      );
     }
 
     const rows = parseJson<Array<Record<string, unknown>>>(result.stdout) ?? [];
@@ -462,7 +590,12 @@ export async function retryTargets(pi: ExtensionAPI, review: Review): Promise<Re
 
     return [...latest.values()]
       .filter((row) => {
-        return ["failure", "cancelled", "timed_out", "startup_failure"].includes(String(row.conclusion));
+        return [
+          "failure",
+          "cancelled",
+          "timed_out",
+          "startup_failure",
+        ].includes(String(row.conclusion));
       })
       .map((row) => ({
         id: String(row.databaseId),
@@ -479,12 +612,15 @@ export async function retryTargets(pi: ExtensionAPI, review: Review): Promise<Re
     { cwd: review.worktree, timeout: 30_000 },
   );
 
-  const value = parseJson<{ jobs?: Array<Record<string, unknown>>; pipeline?: Record<string, unknown> }>(
-    result.stdout,
-  );
+  const value = parseJson<{
+    jobs?: Array<Record<string, unknown>>;
+    pipeline?: Record<string, unknown>;
+  }>(result.stdout);
 
   if (!value?.pipeline) {
-    throw new Error(result.stderr.trim() || "Unable to read GitLab pipeline status");
+    throw new Error(
+      result.stderr.trim() || "Unable to read GitLab pipeline status",
+    );
   }
 
   if (String(value.pipeline.sha) !== review.headSha) {
@@ -509,16 +645,17 @@ export async function retryCiTarget(
   review: Review,
   target: RetryTarget,
 ): Promise<void> {
-  const result = review.forge === "github"
-    ? await pi.exec("gh", ["run", "rerun", target.runId!, "--failed"], {
-        cwd: review.worktree,
-        timeout: 30_000,
-      })
-    : await pi.exec(
-        "glab",
-        ["ci", "retry", target.id, "--pipeline-id", target.pipelineId!],
-        { cwd: review.worktree, timeout: 30_000 },
-      );
+  const result =
+    review.forge === "github"
+      ? await pi.exec("gh", ["run", "rerun", target.runId!, "--failed"], {
+          cwd: review.worktree,
+          timeout: 30_000,
+        })
+      : await pi.exec(
+          "glab",
+          ["ci", "retry", target.id, "--pipeline-id", target.pipelineId!],
+          { cwd: review.worktree, timeout: 30_000 },
+        );
 
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || `Unable to retry ${target.name}`);
