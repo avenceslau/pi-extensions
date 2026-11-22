@@ -12,7 +12,6 @@ const REVIEW_AGENTS = new Set([
   "code-restraint-review",
   "correctness-review",
   "refactor-review",
-  "shepherd-refactor-review",
 ]);
 
 export default function manualModes(pi: ExtensionAPI): void {
