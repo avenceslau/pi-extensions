@@ -37,6 +37,9 @@ export interface AgentRolesConfig {
 }
 
 export interface PiExtensionsConfig {
+  btw?: {
+    backend?: "herdr" | "rex";
+  };
   clef?: ClefConfig;
   models?: ModelsConfig;
   forges?: Record<string, Forge>;

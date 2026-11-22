@@ -76,6 +76,7 @@ export default {
 - `forges` maps additional hostnames to `github` or `gitlab`.
 - `agentRoles.readOnly` and `agentRoles.review` add subagent types to the corresponding restrictions.
 - `sessionFocus.backend` selects the session-focus display integration.
+- `btw.backend` selects the `/btw` pane backend (`"herdr"` by default, or `"rex"`).
 
 Other packages can contribute defaults through the `pi-extensions:config` event. Later contributions replace `clef`, override model and forge keys, and extend the `agentRoles` lists.
 
