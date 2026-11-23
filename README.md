@@ -82,7 +82,7 @@ Other packages can contribute defaults through the `pi-extensions:config` event.
 
 ## Post-change audit
 
-The audit checks session changes, formats touched files with an available configured formatter, and runs the hygiene linter and review agents. Automatic audits run after changes when the session and its subagents settle; they skip changes under 50 lines and allow up to two fix rounds per user message. Use `/audit` to review smaller changes.
+The audit checks session changes, formats touched files with an available configured formatter, and runs the hygiene linter and review agents. Automatic audits run after changes when the session and its subagents settle; they skip changes under 50 lines and allow up to two fix rounds, counted across user messages until an audit comes back clean. Use `/audit` to review smaller changes or to check again after the limit.
 
 Other packages can add auditors or review context through `post-change-audit:contributions`. See `extensions/post-change-audit/contributions.ts` for the API.
 
