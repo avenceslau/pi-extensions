@@ -367,6 +367,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
   let auditOptOut: OptOutCheck = { keyword: false };
   let clefOptOutFailureShown = false;
   let ownHub: AuditHub | undefined;
+  // Counts across user messages; only a clean audit, automatic or /audit, resets it.
   let fixRounds = 0;
   // Work left unaudited by an earlier run, such as after the fix-round limit, waits for the next run that edits files.
   let changedSinceLastSettle = false;
@@ -924,12 +925,13 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     return changes;
   }
 
+  // Returns whether any reviewer found something, even when the fix-round limit holds the findings back.
   function deliver(
     ctx: ExtensionContext,
     changes: RepoChange[],
     results: AuditorResult[],
     trigger: "manual" | "automatic",
-  ): void {
+  ): boolean {
     const { failures, hasFindings, ...classified } = classifyResults(results);
 
     if (failures) {
@@ -939,7 +941,17 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     if (!hasFindings) {
       ctx.ui.notify("Post-change audit found no issues.", "info");
 
-      return;
+      return false;
+    }
+
+    // The background correctness review also lands here, after the audit's own round check.
+    if (trigger === "automatic" && fixRounds >= MAX_FIX_ROUNDS) {
+      ctx.ui.notify(
+        `Post-change audit: findings remain after ${MAX_FIX_ROUNDS} fix rounds; run /audit or /correctness to see them.`,
+        "warning",
+      );
+
+      return true;
     }
 
     if (trigger === "automatic") {
@@ -971,6 +983,8 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       ...classified,
       settledDecisions: ledger.map(({ id: _id, ...decision }) => decision),
     });
+
+    return true;
   }
 
   async function audit(
@@ -1055,7 +1069,7 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       // Started first because it records the open findings as settled decisions, which the correctness review lists.
       const auditorRuns = runAuditors(changes, controller.signal);
 
-      // Fix rounds only re-check the fixes, so the correctness review runs once per user message.
+      // Fix rounds only re-check the fixes, so the correctness review runs only on the first audit after a clean one.
       if (
         !automaticCorrectness &&
         !(trigger === "automatic" && fixRounds > 0)
@@ -1080,7 +1094,11 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
       }
 
       markAudited(changes);
-      deliver(ctx, changes, results, trigger);
+
+      // Only the auditors' verdict resets the rounds; a clean background correctness review says nothing about their findings.
+      if (!deliver(ctx, changes, results, trigger)) {
+        fixRounds = 0;
+      }
     } finally {
       if (inFlight === controller) {
         inFlight = undefined;
@@ -1729,7 +1747,6 @@ export default function postChangeAudit(pi: ExtensionAPI): void {
     if (userInputPending) {
       abortInFlight();
       userInputPending = false;
-      fixRounds = 0;
 
       // The automatic audit covers everything since the last audit, so edits that background
       // subagents made before this prompt are still audited once they finish.
