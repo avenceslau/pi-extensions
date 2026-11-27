@@ -1,4 +1,5 @@
-import { API_CONCURRENCY, mapWithLimit, runProgram } from "../exec.ts";
+import { runProgram } from "../../shared/exec.ts";
+import { API_CONCURRENCY, mapWithLimit } from "../exec.ts";
 import { listAllPages } from "./pagination.ts";
 import type {
   FailedJob,

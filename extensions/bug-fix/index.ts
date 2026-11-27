@@ -1,34 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Type, type Static, type TSchema } from "typebox";
-import { Value } from "typebox/value";
+import { Type } from "typebox";
 import { loadConfig } from "../shared/config.ts";
+import { runProgram } from "../shared/exec.ts";
+import { createSession, findSession, openTab } from "../shared/rex.ts";
+import { prepareWorktree, removeWorktree } from "../shared/worktree.ts";
 
 const REX_SESSION_LABEL = "bugs";
 const WINDOW_LABEL_MAX_CHARACTERS = 40;
-const REX_TIMEOUT_MS = 10_000;
+const BRANCH_SLUG_MAX_CHARACTERS = 40;
 
-const RexSessionListSchema = Type.Object({
-  sessions: Type.Array(
-    Type.Object({
-      session_id: Type.String(),
-      label: Type.Optional(Type.String()),
-    }),
-  ),
-});
-
-const RexWindowSchema = Type.Object({
-  window_id: Type.String(),
-});
-
-const RexCreatedSessionSchema = Type.Object({
-  session_id: Type.String(),
-  initial_windows: Type.Array(RexWindowSchema, { minItems: 1 }),
-});
+// Two bugs with the same title still get separate branches, so a reused worktree is never reset over earlier work.
+const BRANCH_SUFFIX_CHARACTERS = 6;
 
 type BugFixWindow = {
   sessionId: string;
@@ -38,19 +26,24 @@ type BugFixWindow = {
 
 const BUG_FIX_INSTRUCTIONS = [
   "Another Pi session found this bug while working on an unrelated task and started this session to fix it.",
-  "The working directory may be that task's checkout: do not commit to its branch or leave changes in it.",
-  "Make the fix on a new branch in its own worktree off a freshly fetched trunk, add a test that fails without the fix, and report what you changed.",
+  "Add a test that fails without the fix, fix the bug, and report what you changed.",
 ].join(" ");
 
 function bugFixPrompt(
   description: string,
-  cwd: string,
+  branch: string,
+  reporterCwd: string,
   reporterSession: string | undefined,
 ): string {
-  const lines = [BUG_FIX_INSTRUCTIONS, "", `Repository: ${cwd}`];
+  const lines = [
+    BUG_FIX_INSTRUCTIONS,
+    "",
+    `You are in a new worktree on branch ${branch}, started at origin's default branch.`,
+    `Reported from: ${reporterCwd}`,
+  ];
 
   if (reporterSession) {
-    lines.push(`Reported from session: ${reporterSession}`);
+    lines.push(`Reporter's session: ${reporterSession}`);
   }
 
   lines.push("", "Bug report:", description);
@@ -58,109 +51,67 @@ function bugFixPrompt(
   return lines.join("\n");
 }
 
-export default function (pi: ExtensionAPI) {
-  // Concurrent calls in one session would each see no bugs session and create two.
-  let rexQueue: Promise<unknown> = Promise.resolve();
+function bugBranch(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, BRANCH_SLUG_MAX_CHARACTERS)
+    .replace(/^-+|-+$/g, "");
 
-  async function runRexJson<Schema extends TSchema>(
-    args: string[],
-    schema: Schema,
-    what: string,
-  ): Promise<Static<Schema>> {
-    const completed = await pi.exec("rex", args, { timeout: REX_TIMEOUT_MS });
+  const suffix = randomUUID().slice(0, BRANCH_SUFFIX_CHARACTERS);
 
-    if (completed.code !== 0) {
-      throw new Error(completed.stderr.trim() || `Could not ${what} in Rex`);
-    }
+  return slug ? `bug/${slug}-${suffix}` : `bug/${suffix}`;
+}
 
-    let output: unknown;
+async function openBugFixWindow(
+  label: string,
+  cwd: string,
+  command: string[],
+): Promise<BugFixWindow> {
+  const sessionId = await findSession(REX_SESSION_LABEL);
 
-    try {
-      output = JSON.parse(completed.stdout);
-    } catch {
-      throw new Error(`Rex returned invalid JSON when asked to ${what}`);
-    }
-
-    if (!Value.Check(schema, output)) {
-      throw new Error(
-        `Rex returned an unexpected response when asked to ${what}`,
-      );
-    }
-
-    return output;
-  }
-
-  async function openBugFixWindow(
-    label: string,
-    cwd: string,
-    command: string[],
-  ): Promise<BugFixWindow> {
-    const launchArgs = ["--cwd", cwd, "--json", "--", ...command];
-    const sessionList = await runRexJson(
-      ["ls", "--json"],
-      RexSessionListSchema,
-      "list sessions",
-    );
-    const sessionId = sessionList.sessions.find(
-      (session) => session.label === REX_SESSION_LABEL,
-    )?.session_id;
-
-    if (sessionId) {
-      const window = await runRexJson(
-        [
-          "window",
-          "new",
-          "--session",
-          sessionId,
-          label,
-          "--focus=false",
-          ...launchArgs,
-        ],
-        RexWindowSchema,
-        "create the bug-fix tab",
-      );
-
-      return {
-        sessionId,
-        windowId: window.window_id,
-        createdSession: false,
-      };
-    }
-
-    const created = await runRexJson(
-      ["new", REX_SESSION_LABEL, "--window", label, ...launchArgs],
-      RexCreatedSessionSchema,
-      `create the ${REX_SESSION_LABEL} session`,
-    );
-
+  if (sessionId) {
     return {
-      sessionId: created.session_id,
-      windowId: created.initial_windows[0].window_id,
-      createdSession: true,
+      sessionId,
+      windowId: await openTab(sessionId, label, cwd, command),
+      createdSession: false,
     };
   }
 
-  async function resolveCwd(
-    requested: string | undefined,
-    context: ExtensionContext,
-  ): Promise<string> {
-    if (!requested) {
-      return context.cwd;
-    }
+  const created = await createSession(REX_SESSION_LABEL, label, cwd, command);
 
-    const cwd = resolve(context.cwd, requested.replace(/^@/, ""));
-    const cwdStats = await stat(cwd).catch((error: Error) => {
-      throw new Error(
-        `Cannot use ${cwd} as the bug's repository: ${error.message}`,
-      );
-    });
+  return {
+    ...created,
+    createdSession: true,
+  };
+}
 
-    if (!cwdStats.isDirectory()) {
-      throw new Error(`${cwd} is not a directory`);
-    }
-
-    return cwd;
+async function resolveCwd(
+  requested: string | undefined,
+  context: ExtensionContext,
+): Promise<string> {
+  if (!requested) {
+    return context.cwd;
   }
+
+  const cwd = resolve(context.cwd, requested.replace(/^@/, ""));
+
+  const cwdStats = await stat(cwd).catch((error: Error) => {
+    throw new Error(
+      `Cannot use ${cwd} as the bug's repository: ${error.message}`,
+    );
+  });
+
+  if (!cwdStats.isDirectory()) {
+    throw new Error(`${cwd} is not a directory`);
+  }
+
+  return cwd;
+}
+
+export default function (pi: ExtensionAPI) {
+  // Concurrent calls in one session would each see no bugs session and create two.
+  let rexQueue: Promise<unknown> = Promise.resolve();
 
   pi.registerTool({
     name: "start_bug_fix",
@@ -195,9 +146,24 @@ export default function (pi: ExtensionAPI) {
 
       const cwd = await resolveCwd(params.cwd, context);
       const title = params.title.replace(/\s+/g, " ").trim();
+      const branch = bugBranch(title);
+
+      const repositoryPath = await runProgram(
+        "git",
+        ["rev-parse", "--show-toplevel"],
+        { cwd },
+      );
+
+      const worktree = await prepareWorktree(repositoryPath, {
+        branch,
+        fetch: [],
+        start: "origin/HEAD",
+      });
+
       const model =
         loadConfig(pi).models?.extensions?.["bug-fix"] ??
         (context.model && `${context.model.provider}/${context.model.id}`);
+
       const command = [
         "pi",
         "--name",
@@ -207,6 +173,7 @@ export default function (pi: ExtensionAPI) {
         String(pi.getThinkingLevel()),
         bugFixPrompt(
           params.description,
+          branch,
           cwd,
           context.sessionManager.getSessionFile(),
         ),
@@ -215,27 +182,42 @@ export default function (pi: ExtensionAPI) {
       const opened = rexQueue.then(() =>
         openBugFixWindow(
           title.slice(0, WINDOW_LABEL_MAX_CHARACTERS),
-          cwd,
+          worktree.path,
           command,
         ),
       );
+
       // The caller gets the failure from `opened`; the queue only needs to stay usable.
       rexQueue = opened.catch(() => undefined);
-      const window = await opened;
+
+      let window: BugFixWindow;
+
+      try {
+        window = await opened;
+      } catch (error) {
+        await removeWorktree(repositoryPath, worktree.path, branch);
+
+        throw error;
+      }
 
       const where = window.createdSession
         ? `a new Rex session "${REX_SESSION_LABEL}"`
         : `the Rex session "${REX_SESSION_LABEL}"`;
+
       context.ui.notify(`Started bug fix "${title}" in ${where}`, "info");
 
       return {
         content: [
           {
             type: "text",
-            text: `Started a Pi session to fix "${title}" in ${where} (${window.windowId}). Continue with the current task.`,
+            text: `Started a Pi session to fix "${title}" on branch ${branch} in ${where}. Continue with the current task.`,
           },
         ],
-        details: window,
+        details: {
+          ...window,
+          branch,
+          worktree: worktree.path,
+        },
       };
     },
   });
