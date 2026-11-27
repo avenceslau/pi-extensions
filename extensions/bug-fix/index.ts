@@ -165,29 +165,26 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "start_bug_fix",
     label: "Start Bug Fix",
-    description: `Start a separate Pi session that tries to fix a bug unrelated to the current task. It runs in its own tab of the Rex session "${REX_SESSION_LABEL}", which is created when missing. The new session sees only the description, so make it self-contained.`,
-    promptSnippet:
-      "Hand a bug unrelated to the current task to a new Pi session",
+    description:
+      "Start a separate Pi session to fix a bug unrelated to the current task. That session sees only `description`.",
     promptGuidelines: [
-      "Use start_bug_fix when you find a bug unrelated to the current task, instead of fixing it in this session or ignoring it; then continue the current task.",
-      "In the start_bug_fix description, include the affected files and symbols, how to reproduce the bug, the expected and actual behavior, and any suspected cause.",
+      "Use start_bug_fix for bugs unrelated to the current task instead of fixing or ignoring them, then continue the task.",
     ],
     parameters: Type.Object({
       title: Type.String({
         minLength: 1,
         maxLength: 200,
-        description: "Short summary of the bug, used as the tab name",
+        description: "Short bug summary",
       }),
       description: Type.String({
         minLength: 1,
         maxLength: 20_000,
         description:
-          "Self-contained bug report: affected files and symbols, reproduction steps, expected versus actual behavior, suspected cause",
+          "Self-contained bug report: files and symbols, repro steps, expected vs actual, suspected cause",
       }),
       cwd: Type.Optional(
         Type.String({
-          description:
-            "Repository directory the bug lives in; defaults to the current working directory",
+          description: "Bug's repository; defaults to the current directory",
         }),
       ),
     }),
