@@ -22,7 +22,7 @@ export interface ModelsConfig {
   unavailable?: string;
   // Model for each agent type, used when an Agent call or audit spawn names none.
   agents?: Record<string, string>;
-  // Model for each extension that makes its own model calls, by extension name: btw, session-focus.
+  // Model for each extension that makes its own model calls, by extension name: btw, bug-fix, session-focus.
   extensions?: Record<string, string>;
 }
 
