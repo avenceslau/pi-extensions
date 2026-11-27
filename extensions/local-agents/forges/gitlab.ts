@@ -116,6 +116,25 @@ export function gitlabClient(
     JSON.parse(await api(path)) as T;
 
   let mergeRequests: Promise<GitLabMergeRequest[]> | undefined;
+  let mergeTrains: Promise<boolean> | undefined;
+
+  const mergeTrainsEnabled = () => {
+    mergeTrains ??= json<{ merge_trains_enabled?: boolean }>(projectPath).then(
+      (settings) => settings.merge_trains_enabled === true,
+    );
+
+    return mergeTrains;
+  };
+
+  // "idle" is the status of a merge request that is not on the train.
+  const onMergeTrain = async (number: number) => {
+    const car = await json<{ status: string }>(
+      `${projectPath}/merge_trains/merge_requests/${number}`,
+    );
+
+    return car.status !== "idle";
+  };
+
   let user: Promise<string> | undefined;
 
   const listMergeRequests = () => {
@@ -286,15 +305,27 @@ export function gitlabClient(
       return trains.slice(0, count).map(pipelineTiming);
     },
 
-    // GitLab queues auto-merge only while a pipeline runs; once the pipeline has finished, the same request merges at
-    // once or fails. So this queues it during a pipeline, merges a merge request that is already mergeable, and
-    // otherwise waits, for example for an approval or a new pipeline. Either way only the commit seen here merges.
+    // GitLab queues auto-merge only while a pipeline runs; once the pipeline has finished, asking for it fails. So this
+    // queues it during a pipeline, merges a merge request that is already mergeable, and otherwise waits, for example
+    // for an approval or a new pipeline. A project with merge trains refuses direct merges, so there the merge request
+    // joins the train instead. Either way only the commit seen here merges.
     async enableAutoMerge(number) {
       const mergeRequest = await json<{
         sha: string;
         detailed_merge_status: string;
+        merge_when_pipeline_succeeds: boolean;
         head_pipeline: { status: string } | null;
       }>(`${projectPath}/merge_requests/${number}`);
+
+      const usesMergeTrains = await mergeTrainsEnabled();
+
+      const queued =
+        mergeRequest.merge_when_pipeline_succeeds ||
+        (usesMergeTrains && (await onMergeTrain(number)));
+
+      if (queued) {
+        return "enabled";
+      }
 
       const pipelineRunning =
         mergeRequest.head_pipeline !== null &&
@@ -306,20 +337,37 @@ export function gitlabClient(
         return "waiting";
       }
 
-      await runProgram("glab", [
-        "api",
-        "--hostname",
-        host,
-        "--method",
-        "PUT",
-        `${projectPath}/merge_requests/${number}/merge`,
-        "--field",
-        "auto_merge=true",
-        "--field",
-        "merge_when_pipeline_succeeds=true",
-        "--field",
-        `sha=${mergeRequest.sha}`,
-      ]);
+      const pinned = ["--field", `sha=${mergeRequest.sha}`];
+
+      const whenPipelineSucceeds = pipelineRunning
+        ? [
+            "--field",
+            "auto_merge=true",
+            "--field",
+            "merge_when_pipeline_succeeds=true",
+          ]
+        : [];
+
+      const request = usesMergeTrains
+        ? [
+            "--method",
+            "POST",
+            `${projectPath}/merge_trains/merge_requests/${number}`,
+            ...pinned,
+            "--field",
+            "auto_merge=true",
+            "--field",
+            "when_pipeline_succeeds=true",
+          ]
+        : [
+            "--method",
+            "PUT",
+            `${projectPath}/merge_requests/${number}/merge`,
+            ...pinned,
+            ...whenPipelineSucceeds,
+          ];
+
+      await runProgram("glab", ["api", "--hostname", host, ...request]);
 
       return "enabled";
     },
