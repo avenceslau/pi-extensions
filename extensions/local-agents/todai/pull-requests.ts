@@ -1,0 +1,388 @@
+import { formatReport } from "../../hygiene/format.ts";
+import { lint } from "../../hygiene/lint.ts";
+import type {
+  Check,
+  CheckContext,
+  Repository,
+  Tab,
+  Trigger,
+} from "../definition.ts";
+import { API_CONCURRENCY, mapWithLimit, run } from "../exec.ts";
+import type { PullRequest, Thread } from "../forges/types.ts";
+import { shortHash, truncate } from "../text.ts";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PLAIN_COMMENT_MAX_AGE_MS = 7 * DAY_MS;
+const REVIEW_WARNINGS_MAX_COUNT = 10;
+const REPORT_MAX_CHARACTERS = 20_000;
+const NOTE_MAX_CHARACTERS = 2_000;
+const LINT_CONCURRENCY = 4;
+
+export function pullRequestTab(repository: Repository, pull: PullRequest): Tab {
+  const prefix = repository.forge.kind === "gitlab" ? "!" : "#";
+
+  return {
+    key: `${repository.url}${prefix}${pull.number}`,
+    label: `${prefix}${pull.number} - ${truncate(pull.title, 60)}`,
+    pullRequest: {
+      repository: repository.url,
+      number: pull.number,
+    },
+  };
+}
+
+function pullRequestWorktree(
+  repository: Repository,
+  pull: PullRequest,
+): Trigger["worktree"] {
+  const kind = repository.forge.kind === "gitlab" ? "mr" : "pr";
+
+  return {
+    branch: `todai/${kind}-${pull.number}`,
+    fetch: [pull.headRef],
+    start: pull.headSha,
+  };
+}
+
+function describe(pull: PullRequest): string {
+  return `"${pull.title}" (${pull.url}) by ${pull.author}, from ${pull.sourceBranch} into ${pull.targetBranch}`;
+}
+
+function pullRequestTrigger(
+  repository: Repository,
+  pull: PullRequest,
+  fields: Pick<Trigger, "key" | "playbook" | "prompt" | "push" | "notify">,
+): Trigger {
+  return {
+    ...fields,
+    repository: repository.url,
+    tab: pullRequestTab(repository, pull),
+    worktree: pullRequestWorktree(repository, pull),
+    review: {
+      number: pull.number,
+      url: pull.url,
+    },
+  };
+}
+
+async function ownPullRequests(repository: Repository): Promise<PullRequest[]> {
+  const username = await repository.forge.currentUser();
+
+  return (await repository.forge.openPullRequests()).filter(
+    (pull) => pull.author === username,
+  );
+}
+
+function rebaseTrigger(repository: Repository, pull: PullRequest): Trigger {
+  return pullRequestTrigger(repository, pull, {
+    key: `rebase:${repository.url}:${pull.number}:${pull.headSha}`,
+    playbook: "rebase",
+    push: {
+      branch: pull.sourceBranch,
+      expectedSha: pull.headSha,
+      askFirst: false,
+    },
+    prompt: `Your ${describe(pull)} has conflicts with ${pull.targetBranch}.
+
+The worktree is at its head ${pull.headSha} on the local branch \`${pullRequestWorktree(repository, pull).branch}\`. Run \`git fetch origin ${pull.targetBranch}\` and rebase onto \`origin/${pull.targetBranch}\`, resolve the conflicts, run the checks that cover what you touched, and push with push_branch.`,
+  });
+}
+
+export const conflictsCheck: Check = {
+  name: "conflicts",
+  everyMinutes: 5,
+  async run(context) {
+    const triggers: Trigger[] = [];
+
+    for (const repository of context.repositories) {
+      const pulls = (await ownPullRequests(repository)).filter(
+        (pull) => !pull.fromFork,
+      );
+
+      const conflicts = await mapWithLimit(pulls, API_CONCURRENCY, (pull) =>
+        repository.forge.hasConflicts(pull),
+      );
+
+      triggers.push(
+        ...pulls
+          .filter((_pull, index) => conflicts[index] === true)
+          .map((pull) => rebaseTrigger(repository, pull)),
+      );
+    }
+
+    return triggers;
+  },
+};
+
+function needsAttention(
+  thread: Thread,
+  username: string,
+  seen: Set<string>,
+  now: Date,
+): boolean {
+  const last = thread.notes.at(-1);
+
+  if (!last || last.author === username || last.authorIsBot) {
+    return false;
+  }
+
+  if (thread.resolvable) {
+    return !thread.resolved;
+  }
+
+  return (
+    !seen.has(last.id) &&
+    now.getTime() - Date.parse(last.createdAt) < PLAIN_COMMENT_MAX_AGE_MS
+  );
+}
+
+function formatThread(thread: Thread, seen: Set<string>): string {
+  const location = thread.path
+    ? `${thread.path}${thread.line ? `:${thread.line}` : ""}`
+    : "General comment";
+
+  const notes = thread.notes.map((note) => {
+    const marker = seen.has(note.id) ? "" : " (new)";
+
+    return `- ${note.author}${marker}, ${note.createdAt}, ${note.url ?? ""}\n  ${truncate(note.body, NOTE_MAX_CHARACTERS).replaceAll("\n", "\n  ")}`;
+  });
+
+  return `### ${location}\n${notes.join("\n")}`;
+}
+
+function commentsTrigger(
+  repository: Repository,
+  pull: PullRequest,
+  attention: Thread[],
+  fresh: Thread[],
+  seen: Set<string>,
+): Trigger {
+  const tab = pullRequestTab(repository, pull);
+
+  const freshIds = fresh.flatMap((thread) =>
+    thread.notes.map((note) => note.id),
+  );
+
+  return pullRequestTrigger(repository, pull, {
+    key: `comments:${tab.key}:${shortHash(freshIds.sort().join(","))}`,
+    playbook: "comments",
+    notify: `${tab.label}: ${fresh.length} comment thread(s) need you`,
+    push: {
+      branch: pull.sourceBranch,
+      expectedSha: pull.headSha,
+      askFirst: true,
+    },
+    prompt: `Your ${describe(pull)} has comments waiting for you. The worktree is at its head ${pull.headSha}.
+
+${attention.map((thread) => formatThread(thread, seen)).join("\n\n")}`,
+  });
+}
+
+export const commentsCheck: Check = {
+  name: "comments",
+  everyMinutes: 5,
+  async run(context) {
+    const triggers: Trigger[] = [];
+    const seenByTab = (context.memory.seen ??= {}) as Record<string, string[]>;
+
+    const updatedByTab = (context.memory.updatedAt ??= {}) as Record<
+      string,
+      string
+    >;
+
+    const openTabs = new Set<string>();
+
+    for (const repository of context.repositories) {
+      const username = await repository.forge.currentUser();
+      const own = await ownPullRequests(repository);
+
+      for (const pull of own) {
+        openTabs.add(pullRequestTab(repository, pull).key);
+      }
+
+      // A new comment changes the merge request's update time, so unchanged ones need no thread fetch.
+      const pulls = own.filter(
+        (pull) =>
+          updatedByTab[pullRequestTab(repository, pull).key] !== pull.updatedAt,
+      );
+
+      const threadsByPull = await mapWithLimit(pulls, API_CONCURRENCY, (pull) =>
+        repository.forge.threads(pull),
+      );
+
+      for (const [index, pull] of pulls.entries()) {
+        const tab = pullRequestTab(repository, pull);
+        const seen = new Set(seenByTab[tab.key] ?? []);
+        const threads = threadsByPull[index];
+
+        const attention = threads.filter((thread) =>
+          needsAttention(thread, username, seen, context.now),
+        );
+
+        const fresh = attention.filter((thread) =>
+          thread.notes.some((note) => !seen.has(note.id)),
+        );
+
+        updatedByTab[tab.key] = pull.updatedAt;
+        seenByTab[tab.key] = threads.flatMap((thread) =>
+          thread.notes.map((note) => note.id),
+        );
+
+        if (fresh.length > 0) {
+          triggers.push(
+            commentsTrigger(repository, pull, attention, fresh, seen),
+          );
+        }
+      }
+    }
+
+    for (const key of Object.keys(seenByTab)) {
+      if (!openTabs.has(key)) {
+        delete seenByTab[key];
+        delete updatedByTab[key];
+      }
+    }
+
+    return triggers;
+  },
+};
+
+async function reviewDiff(
+  repository: Repository,
+  pull: PullRequest,
+): Promise<string> {
+  const git = (...args: string[]) => run("git", args, { cwd: repository.path });
+
+  const base = await git(
+    "merge-base",
+    `origin/${pull.targetBranch}`,
+    pull.headSha,
+  );
+
+  return git("diff", base, pull.headSha);
+}
+
+async function hygieneTrigger(
+  context: CheckContext,
+  repository: Repository,
+  pull: PullRequest,
+): Promise<Trigger | undefined> {
+  const report = await lint({
+    root: repository.path,
+    ref: pull.headSha,
+    diffText: await reviewDiff(repository, pull),
+    clef: context.config.clef,
+  });
+
+  const errors = report.diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error",
+  ).length;
+
+  const warnings = report.diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "warning",
+  ).length;
+
+  context.log(
+    `${repository.url} ${pull.number}: ${errors} error(s), ${warnings} warning(s)`,
+  );
+
+  if (errors === 0 && warnings < REVIEW_WARNINGS_MAX_COUNT) {
+    return undefined;
+  }
+
+  const tab = pullRequestTab(repository, pull);
+
+  return pullRequestTrigger(repository, pull, {
+    key: `review:${tab.key}:${pull.headSha}`,
+    playbook: "review",
+    notify: `${tab.label}: ${errors} hygiene error(s), ${warnings} warning(s)`,
+    prompt: `The hygiene linter flagged ${describe(pull)} at ${pull.headSha}: ${errors} error(s) and ${warnings} warning(s). The worktree is checked out at that commit.
+
+Hygiene report:
+
+${truncate(formatReport(report), REPORT_MAX_CHARACTERS)}`,
+  });
+}
+
+export const hygieneCheck: Check = {
+  name: "hygiene",
+  everyMinutes: 5,
+  async run(context) {
+    const triggers: Trigger[] = [];
+    // The first run records the current heads without linting them, since its triggers would not start anyway.
+    const firstRun = context.memory.linted === undefined;
+
+    const lintedByTab = (context.memory.linted ??= {}) as Record<
+      string,
+      string
+    >;
+
+    const openTabs = new Set<string>();
+
+    for (const repository of context.repositories) {
+      const username = await repository.forge.currentUser();
+
+      const pulls = (await repository.forge.openPullRequests()).filter(
+        (pull) => pull.author !== username && !pull.authorIsBot && !pull.draft,
+      );
+
+      const unlinted = pulls.filter(
+        (pull) =>
+          lintedByTab[pullRequestTab(repository, pull).key] !== pull.headSha,
+      );
+
+      for (const pull of pulls) {
+        openTabs.add(pullRequestTab(repository, pull).key);
+
+        if (firstRun) {
+          lintedByTab[pullRequestTab(repository, pull).key] = pull.headSha;
+        }
+      }
+
+      if (firstRun || unlinted.length === 0) {
+        continue;
+      }
+
+      // One fetch for every merge request, since parallel fetches into one clone contend for its ref locks.
+      await run(
+        "git",
+        [
+          "fetch",
+          "origin",
+          ...new Set(
+            unlinted.flatMap((pull) => [pull.headRef, pull.targetBranch]),
+          ),
+        ],
+        { cwd: repository.path },
+      );
+
+      const lintTriggers = await mapWithLimit(
+        unlinted,
+        LINT_CONCURRENCY,
+        (pull) =>
+          hygieneTrigger(context, repository, pull).then(
+            (trigger) => {
+              lintedByTab[pullRequestTab(repository, pull).key] = pull.headSha;
+
+              return trigger;
+            },
+            (error: Error) => {
+              context.log(`could not lint ${pull.url}: ${error.message}`);
+
+              return undefined;
+            },
+          ),
+      );
+
+      triggers.push(...lintTriggers.filter((trigger) => trigger !== undefined));
+    }
+
+    for (const key of Object.keys(lintedByTab)) {
+      if (!openTabs.has(key)) {
+        delete lintedByTab[key];
+      }
+    }
+
+    return triggers;
+  },
+};

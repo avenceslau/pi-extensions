@@ -78,6 +78,7 @@ export default {
 - `agentRoles.readOnly` and `agentRoles.review` add subagent types to the corresponding restrictions.
 - `sessionFocus.backend` selects the session-focus display integration.
 - `btw.backend` selects the `/btw` pane backend (`"herdr"` by default, or `"rex"`).
+- `localAgents` configures each [local agent](#local-agents) by name.
 
 Other packages can contribute defaults through the `pi-extensions:config` event. Later contributions replace `clef`, override model and forge keys, and extend the `agentRoles` lists.
 
@@ -102,6 +103,58 @@ node --experimental-strip-types extensions/hygiene/cli.ts [--diff file|-] [--roo
 ```
 
 With no arguments, `/hygiene` and `hygiene_lint` check uncommitted changes and untracked files. The standalone CLI requires paths or `--diff`. `--check` exits with status 1 when a finding meets the `--fail-on` threshold (default: `warning`). Add new rule traits under `extensions/hygiene/traits/`, register them in `extensions/hygiene/traits.ts`, and increment a rule's `version` when changing it to invalidate cached judgments.
+
+## Local agents
+
+`extensions/local-agents/` runs agents on your machine from launchd. Each agent is a set of checks, plain code that runs on a schedule and needs no model, and the playbooks they start. A check returns triggers. Each new trigger starts a fresh pi session in a Rex tab of a session named after the agent, in a Shirei worktree. Runs for the same merge request share its tab, labelled `!123 - title` (GitLab) or `#123 - title` (GitHub). The tab and its clean worktrees are removed once the merge request closes.
+
+`todai` is the first agent. For each configured repository it:
+
+- rebases your merge requests that have conflicts and force-pushes them, asking only when the rebase needs a decision;
+- prepares answers to new review comments on your merge requests and waits for you;
+- lints new commits on other people's merge requests and reports when there is an error or 10 or more warnings;
+- investigates every new CI failure on the default branch or an open merge request, and offers a merge request that fixes flaky ones;
+- once an hour, from 10:00 to 19:00 on weekdays, picks one slow or slower CI job and offers a merge request that speeds it up.
+
+A check's first run records what already exists without starting anything, so an agent acts only on what changes after you install it.
+
+```ts
+export default {
+  forges: { "git.example.com": "gitlab" },
+  localAgents: {
+    todai: {
+      repositories: [
+        {
+          url: "github.com/owner/repo",
+          path: "~/projects/repo",
+          commands: ["pnpm install --frozen-lockfile", "pnpm test **"],
+        },
+      ],
+      model: "provider/model",
+      extensions: ["~/path/to/provider-extension.ts"],
+      maxRunningAgents: 3,
+      ignoredAuthors: ["^ci-bot$"],
+    },
+  },
+} satisfies PiExtensionsConfig;
+```
+
+```sh
+node --experimental-strip-types extensions/local-agents/cli.ts install todai [--config package-config.ts]...
+node --experimental-strip-types extensions/local-agents/cli.ts tick todai --dry-run [--check conflicts]...
+node --experimental-strip-types extensions/local-agents/cli.ts uninstall todai
+```
+
+`install` runs `tick` every five minutes and logs to `~/.pi/agent/local-agents/<agent>/tick.log`. Outside pi, packages cannot contribute config through the event bus, so pass their config modules with `--config`; the user config is merged on top. `--dry-run` prints the triggers without starting runs or saving state.
+
+Agent sessions load no extensions, skills, prompt templates, MCP servers, or context files beyond the guard, Rex status, auto-retry, and the configured `extensions`. The guard enforces each playbook's limits:
+
+- Only the playbook's tools are available, and file tools only reach the worktree.
+- Bash only runs commands matching the playbook's patterns: read-only commands, git, read-only `gh` and `glab`, and, for playbooks that change code, the repository's `commands`. Substitutions, variables, subshells, heredocs, and redirections to files are refused.
+- Bash runs in a macOS sandbox that can write only to the worktree, the repository's git directory, temporary directories, and build caches.
+- Pushing, opening a merge request, and commenting go through the `push_branch`, `open_merge_request`, and `post_comment` tools. Only the rebase playbook pushes without asking. Reviews of other people's merge requests never run their code.
+
+Add an agent under `extensions/local-agents/<name>/` and register it in `cli.ts`.
 
 ## Model failover and subagent safety
 

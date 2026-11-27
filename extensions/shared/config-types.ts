@@ -36,11 +36,35 @@ export interface AgentRolesConfig {
   review?: string[];
 }
 
+export interface LocalAgentRepositoryConfig {
+  // Host and project path, such as github.com/owner/repo.
+  url: string;
+  // Local clone that the agent's worktrees are created from; `~` is expanded.
+  path: string;
+  // Commands agents that change code may run in this repository's worktrees, such as "pnpm test **". In a
+  // pattern `*` matches one word and a trailing `**` matches the rest of the command.
+  commands?: string[];
+}
+
+export interface LocalAgentConfig {
+  repositories?: LocalAgentRepositoryConfig[];
+  model?: string;
+  thinking?: string;
+  // Extension files every agent session loads besides the guard, such as the one that provides the model.
+  extensions?: string[];
+  // Agents working at once; triggers past it wait for a later tick.
+  maxRunningAgents?: number;
+  // Regular expressions for usernames treated as bots, whose reviews and comments are ignored.
+  ignoredAuthors?: string[];
+}
+
 export interface PiExtensionsConfig {
   btw?: {
     backend?: "herdr" | "rex";
   };
   clef?: ClefConfig;
+  // Local agents by name, run by extensions/local-agents/cli.ts.
+  localAgents?: Record<string, LocalAgentConfig>;
   models?: ModelsConfig;
   forges?: Record<string, Forge>;
   agentRoles?: AgentRolesConfig;
