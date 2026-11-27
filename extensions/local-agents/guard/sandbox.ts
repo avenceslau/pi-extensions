@@ -1,6 +1,6 @@
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { ENV_FILE_READ_DENY_RULES } from "../../protect-env-files/index.ts";
+import { ENV_FILE_READ_DENY_RULES } from "../../protect-env-files/sandbox-rules.ts";
 import { realPathOrSelf } from "../paths.ts";
 
 // Build caches and tool state that tests and builds write to, relative to the home directory.
