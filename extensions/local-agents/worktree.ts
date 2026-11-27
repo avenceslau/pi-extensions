@@ -17,11 +17,36 @@ export interface PreparedWorktree {
 }
 
 // Runs in the agents' own sandbox, so setup can write no more than the agent could.
+export async function changedFiles(path: string): Promise<Set<string>> {
+  const output = await runProgram("git", ["diff", "--name-only"], {
+    cwd: path,
+  });
+
+  return new Set(output.split("\n").filter((file) => file !== ""));
+}
+
+// Setup may rewrite tracked files, as pnpm does with its lockfile. Those edits are put back, so the agent starts from
+// the commit and a worktree is not left with changes nobody made; files changed before setup stay as they were.
+export async function restoreFilesSetupChanged(
+  path: string,
+  before: Set<string>,
+): Promise<void> {
+  const rewritten = [...(await changedFiles(path))].filter(
+    (file) => !before.has(file),
+  );
+
+  if (rewritten.length > 0) {
+    await runProgram("git", ["checkout", "--", ...rewritten], { cwd: path });
+  }
+}
+
 async function runSetup(
   repository: Repository,
   path: string,
   gitDirectory: string,
 ): Promise<string | undefined> {
+  const before = await changedFiles(path);
+
   try {
     await runProgram(
       "/usr/bin/sandbox-exec",
@@ -35,9 +60,12 @@ async function runSetup(
         timeoutMs: SETUP_TIMEOUT_MS,
       },
     );
+    await restoreFilesSetupChanged(path, before);
 
     return undefined;
   } catch (error) {
+    await restoreFilesSetupChanged(path, before);
+
     const message = errorMessage(error);
 
     return message.length > SETUP_ERROR_MAX_CHARACTERS
