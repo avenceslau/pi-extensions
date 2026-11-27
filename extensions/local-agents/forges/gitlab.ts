@@ -1,4 +1,4 @@
-import { runProgram } from "../exec.ts";
+import { runProgram } from "../../shared/exec.ts";
 import { listAllPages } from "./pagination.ts";
 import type {
   FailedJob,

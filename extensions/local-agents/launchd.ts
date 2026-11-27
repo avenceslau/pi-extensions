@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { runProgram } from "./exec.ts";
+import { runProgram } from "../shared/exec.ts";
 import { agentDirectory } from "./state.ts";
 
 const TICK_SECONDS = 300;

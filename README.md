@@ -21,7 +21,7 @@ Run `/reload` after installing or updating the package.
 - `/pr [branch]` opens a pull or merge request in a browser.
 - `/plannotator-last` annotates the latest assistant response; `/plannotator-review [PR URL]` reviews current changes or a GitHub/GitLab review. The agent can invoke the same flows through `plannotator_last` and `plannotator_review`. Install the CLI first with `curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal`.
 - `/btw <question>` starts a side session; `/merge` sends its answer back.
-- `start_bug_fix` lets the agent hand a bug unrelated to its task to a new Pi session, in its own tab of the Rex session `bugs` (created when missing). `models.extensions["bug-fix"]` picks its model; otherwise it uses the current one.
+- `start_bug_fix` lets the agent hand a bug unrelated to its task to a new Pi session, in its own tab of the Rex session `bugs` (created when missing) and a new Shirei worktree on a `bug/…` branch off `origin/HEAD`. `models.extensions["bug-fix"]` picks its model; otherwise it uses the current one.
 - `/focus feature <text>`, `/focus task <text>`, and `/focus clear` manage the session label. A configured model can update it automatically.
 - `/spend` summarizes session costs.
 - `compact-footer/` shows directory, branch, token and cost usage, context use, and model details.

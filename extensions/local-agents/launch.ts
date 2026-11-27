@@ -12,7 +12,7 @@ import type {
 import { POLICY_VARIABLE, type RunPolicy } from "./guard/policy.ts";
 import { expandHome } from "./paths.ts";
 import { agentDirectory } from "./state.ts";
-import type { PreparedWorktree } from "./worktree.ts";
+import type { AgentWorktree } from "./worktree.ts";
 
 const EXTENSIONS_DIRECTORY = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -36,7 +36,7 @@ export interface Launch {
 function worktreeNotes(
   playbook: Playbook,
   repository: Repository,
-  worktree: PreparedWorktree,
+  worktree: AgentWorktree,
 ): string[] {
   const notes: string[] = [];
 
@@ -74,7 +74,7 @@ export async function prepareLaunch(
   config: LocalAgentConfig,
   trigger: Trigger,
   repository: Repository,
-  worktree: PreparedWorktree,
+  worktree: AgentWorktree,
   now: Date,
 ): Promise<Launch> {
   const playbook = definition.playbooks[trigger.playbook];

@@ -1,4 +1,5 @@
 import type { PiExtensionsConfig } from "../shared/config-types.ts";
+import type { WorktreeRequest } from "../shared/worktree.ts";
 import type { ForgeClient } from "./forges/types.ts";
 
 export interface Repository {
@@ -46,13 +47,7 @@ export interface Trigger {
   playbook: string;
   repository: string;
   tab: Tab;
-  worktree: {
-    branch: string;
-    // Refs to fetch from origin first.
-    fetch: string[];
-    // The commit or ref to start the branch at.
-    start: string;
-  };
+  worktree: WorktreeRequest;
   prompt: string;
   push?: {
     branch: string;

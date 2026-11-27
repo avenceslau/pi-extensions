@@ -17,7 +17,7 @@ import type {
   Trigger,
 } from "./definition.ts";
 import { errorCode, errorMessage } from "./errors.ts";
-import { runProgram } from "./exec.ts";
+import { runProgram } from "../shared/exec.ts";
 import { forgeClient } from "./forges/index.ts";
 import { parseRunStatus, type RunStatusFile } from "./guard/policy.ts";
 import { prepareLaunch } from "./launch.ts";
@@ -26,10 +26,11 @@ import { expandHome } from "./paths.ts";
 import {
   addPane,
   closeWindow,
-  ensureSession,
+  createSession,
+  findSession,
   openTab,
   windowIds,
-} from "./rex.ts";
+} from "../shared/rex.ts";
 import { isDue } from "./schedule.ts";
 import {
   hasActiveRun,
@@ -44,7 +45,8 @@ import {
   type AgentState,
   type TabRecord,
 } from "./state.ts";
-import { prepareWorktree, removeWorktree } from "./worktree.ts";
+import { removeWorktree } from "../shared/worktree.ts";
+import { prepareAgentWorktree } from "./worktree.ts";
 
 const DEFAULT_MAX_RUNNING_AGENTS = 3;
 const LAUNCH_ATTEMPTS = 3;
@@ -353,7 +355,16 @@ export async function tick(
       log(`queued ${added} trigger(s)`);
     }
 
-    await ensureSession(agent, join(directory, "tick.log"));
+    if (!(await findSession(agent))) {
+      await createSession(agent, "log", directory, [
+        "tail",
+        "-n",
+        "200",
+        "-F",
+        join(directory, "tick.log"),
+      ]);
+    }
+
     await followOpenedReviews(context);
     await removeFinishedTabs(context);
     await launchQueued(context);
@@ -373,7 +384,7 @@ async function startRun(
 ): Promise<TabRecord> {
   const agent = context.definition.name;
 
-  const worktree = await prepareWorktree(
+  const worktree = await prepareAgentWorktree(
     repository,
     trigger.worktree,
     context.definition.playbooks[trigger.playbook]?.runsRepositoryCode === true,
@@ -579,7 +590,7 @@ async function removeFinishedTabs(context: TickContext): Promise<void> {
 
       const removed =
         repository !== undefined &&
-        (await removeWorktree(repository, worktree.path, worktree.branch));
+        (await removeWorktree(repository.path, worktree.path, worktree.branch));
 
       if (!removed) {
         kept.push(worktree.path);

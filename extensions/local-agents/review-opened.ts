@@ -1,4 +1,4 @@
-import { runProgram } from "./exec.ts";
+import { runProgram } from "../shared/exec.ts";
 import { expandHome } from "./paths.ts";
 
 export async function runReviewOpenedCommand(

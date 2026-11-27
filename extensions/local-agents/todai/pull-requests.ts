@@ -7,7 +7,8 @@ import type {
   Tab,
   Trigger,
 } from "../definition.ts";
-import { API_CONCURRENCY, mapWithLimit, runProgram } from "../exec.ts";
+import { runProgram } from "../../shared/exec.ts";
+import { API_CONCURRENCY, mapWithLimit } from "../exec.ts";
 import type { PullRequest, Thread } from "../forges/types.ts";
 import { errorMessage } from "../errors.ts";
 import { shortHash, truncate } from "../text.ts";
