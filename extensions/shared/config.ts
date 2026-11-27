@@ -64,6 +64,7 @@ const LocalAgentConfigSchema = Type.Object({
         url: Type.String(),
         path: Type.String(),
         commands: Type.Optional(Type.Array(Type.String())),
+        setup: Type.Optional(Type.Array(Type.String())),
       }),
     ),
   ),

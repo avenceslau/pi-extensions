@@ -127,7 +127,8 @@ export default {
         {
           url: "github.com/owner/repo",
           path: "~/projects/repo",
-          commands: ["pnpm install --frozen-lockfile", "pnpm test **"],
+          commands: ["pnpm test **", "pnpm --filter * test **"],
+          setup: ["pnpm", "install", "--frozen-lockfile"],
         },
       ],
       model: "provider/model",
@@ -151,7 +152,8 @@ Agent sessions load no extensions, skills, prompt templates, MCP servers, or con
 
 - Only the playbook's tools are available, and file tools only reach the worktree.
 - Bash only runs commands matching the playbook's patterns: read-only commands, git, read-only `gh` and `glab`, and, for playbooks that change code, the repository's `commands`. Substitutions, variables, subshells, heredocs, and redirections to files are refused.
-- Bash runs in a macOS sandbox that can write only to the worktree, the repository's git directory, temporary directories, and build caches.
+- Bash runs in a macOS sandbox that can write only to the worktree, the repository's git directory, temporary directories, and build caches. Environment files are unreadable outside the worktree.
+- Before a playbook that runs the repository's code, the repository's `setup` command, such as `["pnpm", "install", "--frozen-lockfile"]`, installs dependencies in the same sandbox, and the prompt lists the `commands` the agent may run to build and test.
 - Pushing, opening a merge request, and commenting go through the `push_branch`, `open_merge_request`, and `post_comment` tools. Only the rebase playbook pushes without asking. Reviews of other people's merge requests never run their code.
 
 Add an agent under `extensions/local-agents/<name>/` and register it in `cli.ts`.

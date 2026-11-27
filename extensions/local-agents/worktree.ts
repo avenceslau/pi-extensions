@@ -1,19 +1,58 @@
 import { resolve } from "node:path";
 import type { Repository, Trigger } from "./definition.ts";
+import { errorMessage } from "./errors.ts";
 import { runProgram } from "./exec.ts";
+import { sandboxProfile } from "./guard/sandbox.ts";
+
+const SETUP_TIMEOUT_MS = 20 * 60 * 1000;
+const SETUP_ERROR_MAX_CHARACTERS = 3_000;
 
 export interface PreparedWorktree {
   path: string;
   gitDirectory: string;
   // The worktree had uncommitted changes, so it was left where it was instead of moved to the start.
   keptUncommittedChanges: boolean;
+  // Why the repository's setup failed, when it did; the run starts anyway and is told.
+  setupFailure?: string;
+}
+
+// Runs in the agents' own sandbox, so setup can write no more than the agent could.
+async function runSetup(
+  repository: Repository,
+  path: string,
+  gitDirectory: string,
+): Promise<string | undefined> {
+  try {
+    await runProgram(
+      "/usr/bin/sandbox-exec",
+      [
+        "-p",
+        sandboxProfile({ worktree: path, gitDirectory }),
+        ...repository.setup,
+      ],
+      {
+        cwd: path,
+        timeoutMs: SETUP_TIMEOUT_MS,
+      },
+    );
+
+    return undefined;
+  } catch (error) {
+    const message = errorMessage(error);
+
+    return message.length > SETUP_ERROR_MAX_CHARACTERS
+      ? `…${message.slice(-SETUP_ERROR_MAX_CHARACTERS)}`
+      : message;
+  }
 }
 
 // Creates the trigger's branch worktree with Shirei, or reuses it. A clean reused worktree is moved to the trigger's
-// start commit; a dirty one is left alone so a run never discards earlier work.
+// start commit; a dirty one is left alone so a run never discards earlier work. With `shouldRunSetup`, the repository's
+// setup then installs dependencies.
 export async function prepareWorktree(
   repository: Repository,
   worktree: Trigger["worktree"],
+  shouldRunSetup: boolean,
 ): Promise<PreparedWorktree> {
   await runProgram("git", ["fetch", "origin", ...worktree.fetch], {
     cwd: repository.path,
@@ -58,20 +97,22 @@ export async function prepareWorktree(
     await runProgram("git", ["rev-parse", "--git-common-dir"], { cwd: path }),
   );
 
-  if (status !== "") {
-    return {
-      path,
-      gitDirectory,
-      keptUncommittedChanges: true,
-    };
+  const keptUncommittedChanges = status !== "";
+
+  if (!keptUncommittedChanges) {
+    await runProgram("git", ["reset", "--hard", start], { cwd: path });
   }
 
-  await runProgram("git", ["reset", "--hard", start], { cwd: path });
+  const setupFailure =
+    shouldRunSetup && repository.setup.length > 0
+      ? await runSetup(repository, path, gitDirectory)
+      : undefined;
 
   return {
     path,
     gitDirectory,
-    keptUncommittedChanges: false,
+    keptUncommittedChanges,
+    setupFailure,
   };
 }
 

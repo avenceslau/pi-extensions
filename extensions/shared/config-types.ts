@@ -44,6 +44,9 @@ export interface LocalAgentRepositoryConfig {
   // Commands agents that change code may run in this repository's worktrees, such as "pnpm test **". In a
   // pattern `*` matches one word and a trailing `**` matches the rest of the command.
   commands?: string[];
+  // Run in the worktree, in the agents' sandbox, before each run of a playbook that runs the repository's code, such as
+  // ["pnpm", "install", "--frozen-lockfile"].
+  setup?: string[];
 }
 
 export interface LocalAgentConfig {

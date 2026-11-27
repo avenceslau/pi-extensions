@@ -28,6 +28,7 @@ const repository: Repository = {
   path: "/work/repo",
   forge,
   commands: ["pnpm test **"],
+  setup: ["pnpm", "install", "--frozen-lockfile"],
 };
 
 const definition: LocalAgentDefinition = {
@@ -39,6 +40,12 @@ const definition: LocalAgentDefinition = {
       tools: ["read", "bash"],
       commands: (target) => ["git status **", ...target.commands],
       comment: true,
+    },
+    fix: {
+      instructions: "/playbooks/fix.md",
+      tools: ["read", "bash", "edit", "write"],
+      commands: (target) => target.commands,
+      runsRepositoryCode: true,
     },
   },
 };
@@ -119,4 +126,53 @@ test("a run loads nothing ambient and gets only its playbook's tools", async () 
   ]);
   assert.equal(policy?.comment, true);
   assert.equal(policy?.push, undefined);
+});
+
+test("a run that runs the repository's code is told about setup and its commands", async () => {
+  const launch = await prepareLaunch(
+    definition,
+    {},
+    {
+      ...trigger,
+      key: "fix:1",
+      playbook: "fix",
+    },
+    repository,
+    {
+      path: "/work/worktree",
+      gitDirectory: "/work/repo/.git",
+      keptUncommittedChanges: false,
+      setupFailure: "ERR_PNPM_OUTDATED_LOCKFILE",
+    },
+    new Date(),
+  );
+
+  const promptPath = launch.command.at(-2)?.slice(1) ?? "";
+  const prompt = readFileSync(promptPath, "utf8");
+
+  assert.match(
+    prompt,
+    /Installing dependencies with `pnpm install --frozen-lockfile` failed/,
+  );
+  assert.match(prompt, /ERR_PNPM_OUTDATED_LOCKFILE/);
+  assert.match(prompt, /- `pnpm test \*\*`/);
+});
+
+test("a review run that never runs the repository's code gets no setup notes", async () => {
+  const launch = await prepareLaunch(
+    definition,
+    {},
+    trigger,
+    repository,
+    {
+      path: "/work/worktree",
+      gitDirectory: "/work/repo/.git",
+      keptUncommittedChanges: false,
+    },
+    new Date(),
+  );
+
+  const prompt = readFileSync(launch.command.at(-2)?.slice(1) ?? "", "utf8");
+
+  assert.equal(prompt, "Review it.");
 });

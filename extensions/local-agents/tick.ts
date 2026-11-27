@@ -130,6 +130,7 @@ function repositoriesFor(
     url: repository.url,
     path: expandHome(repository.path),
     commands: repository.commands ?? [],
+    setup: repository.setup ?? [],
     forge: forgeClient(repository.url, config.forges ?? {}, isBot),
   }));
 }
@@ -345,7 +346,12 @@ async function startRun(
   openRecord: TabRecord | undefined,
 ): Promise<TabRecord> {
   const agent = context.definition.name;
-  const worktree = await prepareWorktree(repository, trigger.worktree);
+
+  const worktree = await prepareWorktree(
+    repository,
+    trigger.worktree,
+    context.definition.playbooks[trigger.playbook]?.runsRepositoryCode === true,
+  );
 
   const launch = await prepareLaunch(
     context.definition,

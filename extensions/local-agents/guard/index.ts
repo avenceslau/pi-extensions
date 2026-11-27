@@ -5,7 +5,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   isToolCallEventType,
@@ -13,11 +12,11 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { ENV_FILE_READ_DENY_RULES } from "../../protect-env-files/index.ts";
 import { shellQuote } from "../../shared/shell.ts";
-import { expandHome, isInside } from "../paths.ts";
+import { expandHome, isInside, realPathOrSelf } from "../paths.ts";
 import { slug } from "../text.ts";
 import { checkCommand } from "./commands.ts";
+import { sandboxProfile } from "./sandbox.ts";
 import {
   parseRunPolicy,
   POLICY_VARIABLE,
@@ -28,26 +27,6 @@ import {
 // Loaded only into local agent sessions, with -e; without LOCAL_AGENT_POLICY it does nothing.
 
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
-
-const CACHE_DIRECTORIES = [
-  ".cache",
-  "Library/Caches",
-  ".npm",
-  ".local/share/pnpm",
-  ".local/state/pnpm",
-  "Library/pnpm",
-  ".cargo/registry",
-  ".cargo/git",
-  ".rustup",
-];
-
-function realPathOrSelf(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
 
 // Resolves symlinks in the longest existing prefix, so a new file under a symlinked directory is checked where it
 // would really be written.
@@ -74,23 +53,6 @@ export function toolPathIsInside(
   );
 
   return isInside(worktree, target);
-}
-
-export function sandboxProfile(policy: RunPolicy): string {
-  const writable = [
-    policy.worktree,
-    policy.gitDirectory,
-    "/dev",
-    "/private/tmp",
-    tmpdir(),
-    ...CACHE_DIRECTORIES.map((directory) => join(homedir(), directory)),
-  ].map(realPathOrSelf);
-
-  const allowWrites = writable
-    .map((path) => `(allow file-write* (subpath ${JSON.stringify(path)}))`)
-    .join("");
-
-  return `(version 1)(allow default)${ENV_FILE_READ_DENY_RULES}(deny file-write*)${allowWrites}`;
 }
 
 function textResult(text: string) {

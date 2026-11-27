@@ -61,10 +61,12 @@ const definition: LocalAgentDefinition = {
     rebase: playbook("rebase", {
       tools: WRITE_TOOLS,
       commands: codeChangeCommands,
+      runsRepositoryCode: true,
     }),
     comments: playbook("comments", {
       tools: WRITE_TOOLS,
       commands: codeChangeCommands,
+      runsRepositoryCode: true,
       comment: true,
     }),
     review: playbook("review", {
@@ -75,11 +77,13 @@ const definition: LocalAgentDefinition = {
     "ci-failure": playbook("ci-failure", {
       tools: WRITE_TOOLS,
       commands: codeChangeCommands,
+      runsRepositoryCode: true,
       mergeRequest: true,
     }),
     "ci-speed": playbook("ci-speed", {
       tools: WRITE_TOOLS,
       commands: codeChangeCommands,
+      runsRepositoryCode: true,
       mergeRequest: true,
     }),
   },
