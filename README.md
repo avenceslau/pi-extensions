@@ -146,6 +146,12 @@ node --experimental-strip-types extensions/local-agents/cli.ts tick todai --dry-
 node --experimental-strip-types extensions/local-agents/cli.ts uninstall todai
 ```
 
+Merge requests an agent opens get auto-merge once their pipeline starts. `reviewOpenedCommand` runs once for each, with `LOCAL_AGENT`, `REVIEW_TITLE`, and `REVIEW_URL` set, for example to post it to a chat:
+
+```ts
+reviewOpenedCommand: ["~/bin/announce-review"],
+```
+
 `install` runs `tick` every five minutes and logs to `~/.pi/agent/local-agents/<agent>/tick.log`. Outside pi, packages cannot contribute config through the event bus, so pass their config modules with `--config`; the user config is merged on top. `--dry-run` prints the triggers without starting runs or saving state.
 
 Agent sessions load no extensions, skills, prompt templates, MCP servers, or context files beyond the guard, Rex status, auto-retry, and the configured `extensions`. The guard enforces each playbook's limits:

@@ -73,6 +73,7 @@ const LocalAgentConfigSchema = Type.Object({
   extensions: Type.Optional(Type.Array(Type.String())),
   maxRunningAgents: Type.Optional(Type.Integer({ minimum: 1 })),
   ignoredAuthors: Type.Optional(Type.Array(Type.String())),
+  reviewOpenedCommand: Type.Optional(Type.Array(Type.String())),
 });
 
 const PiExtensionsConfigSchema = Type.Object({

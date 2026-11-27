@@ -58,6 +58,9 @@ export interface LocalAgentConfig {
   maxRunningAgents?: number;
   // Regular expressions for usernames treated as bots, whose reviews and comments are ignored.
   ignoredAuthors?: string[];
+  // Run once for each merge request the agent opens, with LOCAL_AGENT, REVIEW_TITLE, and REVIEW_URL set, for example
+  // to post it to a chat. `~` is expanded in each word.
+  reviewOpenedCommand?: string[];
 }
 
 export interface PiExtensionsConfig {

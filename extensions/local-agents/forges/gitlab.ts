@@ -277,6 +277,35 @@ export function gitlabClient(
       return trains.slice(0, count).map(pipelineTiming);
     },
 
+    // Merges only the commit that has the pipeline, once it succeeds, so a later push is not merged unseen.
+    async enableAutoMerge(number) {
+      const mergeRequest = await json<{
+        sha: string;
+        head_pipeline: { id: number } | null;
+      }>(`${projectPath}/merge_requests/${number}`);
+
+      if (!mergeRequest.head_pipeline) {
+        return "waiting";
+      }
+
+      await runProgram("glab", [
+        "api",
+        "--hostname",
+        host,
+        "--method",
+        "PUT",
+        `${projectPath}/merge_requests/${number}/merge`,
+        "--field",
+        "auto_merge=true",
+        "--field",
+        "merge_when_pipeline_succeeds=true",
+        "--field",
+        `sha=${mergeRequest.sha}`,
+      ]);
+
+      return "enabled";
+    },
+
     async pipelineJobs(pipeline): Promise<JobTiming[]> {
       return (await pipelineJobs(Number(pipeline.id))).map((job) => ({
         name: job.name,

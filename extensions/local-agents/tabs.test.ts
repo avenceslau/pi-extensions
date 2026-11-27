@@ -77,7 +77,11 @@ test("concerns no check decides are addressed once the opened merge requests are
       tab({
         concerns,
         openedReviews: [
-          { url: "https://git/repo/-/merge_requests/9", open: true },
+          {
+            url: "https://git/repo/-/merge_requests/9",
+            title: "Fix",
+            open: true,
+          },
         ],
       }),
     ),
@@ -88,7 +92,11 @@ test("concerns no check decides are addressed once the opened merge requests are
       tab({
         concerns,
         openedReviews: [
-          { url: "https://git/repo/-/merge_requests/9", open: false },
+          {
+            url: "https://git/repo/-/merge_requests/9",
+            title: "Fix",
+            open: false,
+          },
         ],
       }),
     ),

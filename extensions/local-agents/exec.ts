@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 
 export interface RunOptions {
   cwd?: string;
+  // Added to the current environment.
+  env?: Record<string, string>;
   input?: string;
   timeoutMs?: number;
 }
@@ -46,6 +48,7 @@ export function runProgram(
       args,
       {
         cwd: options.cwd,
+        env: options.env ? { ...process.env, ...options.env } : undefined,
         maxBuffer: 256 * 1024 * 1024,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       },

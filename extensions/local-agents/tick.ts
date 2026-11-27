@@ -19,8 +19,14 @@ import type {
 import { errorCode, errorMessage } from "./errors.ts";
 import { runProgram } from "./exec.ts";
 import { forgeClient } from "./forges/index.ts";
-import { parseRunStatus, type RunStatusFile } from "./guard/policy.ts";
+import {
+  parseOpenedReviewLine,
+  parseRunStatus,
+  type OpenedReviewLine,
+  type RunStatusFile,
+} from "./guard/policy.ts";
 import { prepareLaunch } from "./launch.ts";
+import { runReviewOpenedCommand } from "./review-opened.ts";
 import { expandHome } from "./paths.ts";
 import {
   addPane,
@@ -41,6 +47,7 @@ import {
   readState,
   writeState,
   type AgentState,
+  type OpenedReview,
   type TabRecord,
 } from "./state.ts";
 import { prepareWorktree, removeWorktree } from "./worktree.ts";
@@ -54,6 +61,7 @@ const REVIEW_NUMBER = /\/(?:merge_requests|pull)\/(\d+)/;
 
 // An addressed tab stays open this long after its last activity, so it does not vanish while the user reads it.
 const ADDRESSED_TAB_IDLE_MS = 30 * 60 * 1000;
+const REVIEW_FOLLOW_UP_ATTEMPTS = 5;
 
 export interface TickOptions {
   // Print the triggers instead of starting runs, and save nothing.
@@ -125,13 +133,16 @@ function liveRuns(runsDirectory: string): Map<string, RunStatusFile> {
   return runs;
 }
 
-// One URL per line; a missing file means the run opened nothing.
-function readOpenedReviews(path: string): string[] {
+// One JSON object per line; a missing file means the run opened nothing.
+function readOpenedReviews(path: string): OpenedReviewLine[] {
   try {
     return readFileSync(path, "utf8")
       .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line !== "");
+      .flatMap((line) => {
+        const review = parseOpenedReviewLine(line);
+
+        return review ? [review] : [];
+      });
   } catch (error) {
     if (errorCode(error) === "ENOENT") {
       return [];
@@ -371,6 +382,7 @@ export async function tick(
     }
 
     await ensureSession(agent, join(directory, "tick.log"));
+    await followOpenedReviews(context);
     await removeFinishedTabs(context);
     await launchQueued(context);
     writeState(agent, state, now);
@@ -551,47 +563,101 @@ async function pullRequestStillOpen(
   return open.some((pull) => pull.number === tab.pullRequest?.number);
 }
 
-// Merge requests the tab's runs opened, read from the files the guard writes, with whether each is still open.
-async function refreshOpenedReviews(
+function reviewRepository(
   context: TickContext,
-  tab: TabRecord,
+  url: string,
+): { repository: Repository; number: number } | undefined {
+  const repository = [...context.repositoryByUrl.values()].find((candidate) =>
+    url.startsWith(`${candidate.forge.url}/`),
+  );
+
+  const number = Number(REVIEW_NUMBER.exec(url)?.[1]);
+
+  return repository && Number.isInteger(number)
+    ? { repository, number }
+    : undefined;
+}
+
+// Runs reviewOpenedCommand for a review once and turns on its auto-merge once it has a pipeline. After REVIEW_FOLLOW_UP_ATTEMPTS failed
+// ticks the caller stops trying; each failure is logged with its reason.
+async function followUp(
+  context: TickContext,
+  review: OpenedReview,
+  repository: Repository,
+  number: number,
 ): Promise<void> {
+  const command = context.agentConfig.reviewOpenedCommand;
+
+  try {
+    if (command && !review.announced) {
+      await runReviewOpenedCommand(command, context.definition.name, review);
+      review.announced = true;
+      context.log(`ran reviewOpenedCommand for ${review.url}`);
+    }
+
+    if (
+      !review.autoMerge &&
+      (await repository.forge.enableAutoMerge(number)) === "enabled"
+    ) {
+      review.autoMerge = "enabled";
+      context.log(`turned on auto-merge for ${review.url}`);
+    }
+  } catch (error) {
+    review.failures = (review.failures ?? 0) + 1;
+    context.log(
+      `could not follow up on ${review.url} (attempt ${review.failures}): ${errorMessage(error)}`,
+    );
+  }
+}
+
+// The tab's known reviews plus any its runs opened since the last tick.
+function tabReviews(context: TickContext, tab: TabRecord): OpenedReview[] {
   const known = new Map(
     (tab.openedReviews ?? []).map((review) => [review.url, review]),
   );
 
-  for (const runId of tab.runIds) {
-    for (const url of readOpenedReviews(
-      join(context.runsDirectory, `${runId}${REVIEWS_SUFFIX}`),
-    )) {
-      if (!known.has(url)) {
-        known.set(url, {
-          url,
-          open: true,
-        });
+  const written = tab.runIds.flatMap((runId) =>
+    readOpenedReviews(join(context.runsDirectory, `${runId}${REVIEWS_SUFFIX}`)),
+  );
+
+  for (const { url, title } of written) {
+    if (!known.has(url)) {
+      known.set(url, {
+        url,
+        title,
+        open: true,
+      });
+    }
+  }
+
+  return [...known.values()];
+}
+
+// Records whether each review the tabs' runs opened is still open, and runs reviewOpenedCommand and turns on auto-merge for new ones.
+async function followOpenedReviews(context: TickContext): Promise<void> {
+  for (const tab of Object.values(context.state.tabs)) {
+    tab.openedReviews = tabReviews(context, tab);
+
+    for (const review of tab.openedReviews) {
+      const target = review.open
+        ? reviewRepository(context, review.url)
+        : undefined;
+
+      if (!target) {
+        continue;
+      }
+
+      const open = await target.repository.forge.openPullRequests();
+
+      review.open = open.some((pull) => pull.number === target.number);
+
+      const attemptsLeft = (review.failures ?? 0) < REVIEW_FOLLOW_UP_ATTEMPTS;
+
+      if (review.open && attemptsLeft) {
+        await followUp(context, review, target.repository, target.number);
       }
     }
   }
-
-  for (const review of known.values()) {
-    if (!review.open) {
-      continue;
-    }
-
-    const repository = [...context.repositoryByUrl.values()].find((candidate) =>
-      review.url.startsWith(`${candidate.forge.url}/`),
-    );
-
-    const number = Number(REVIEW_NUMBER.exec(review.url)?.[1]);
-
-    if (repository && Number.isInteger(number)) {
-      const open = await repository.forge.openPullRequests();
-
-      review.open = open.some((pull) => pull.number === number);
-    }
-  }
-
-  tab.openedReviews = [...known.values()];
 }
 
 async function shouldClose(
@@ -602,8 +668,6 @@ async function shouldClose(
   if (!(await pullRequestStillOpen(context, tab))) {
     return true;
   }
-
-  await refreshOpenedReviews(context, tab);
 
   const idleFor = context.now.getTime() - lastActivity(tab, runs);
 

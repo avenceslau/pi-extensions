@@ -15,3 +15,6 @@ A CI job failed. Decide whether it is a flaky failure or a real one, and fix fla
    times to show the fix holds, commit, and open a merge request with `open_merge_request`; the user must confirm it.
 4. For a real failure, do not change code. Explain what broke, on which merge request, and how to fix it.
 5. For an infrastructure failure (runner lost, registry down, out of disk), report it with the evidence and stop.
+
+A merge request you open gets auto-merge once its pipeline starts, so it merges as soon as the pipeline passes and
+the required approvals are in. Open it only when it is ready to merge as it is.

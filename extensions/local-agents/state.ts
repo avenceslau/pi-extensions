@@ -18,12 +18,20 @@ export interface TabRecord extends Tab {
     id: string;
     addressed: boolean;
   }[];
-  // Merge requests the tab's runs opened, and whether each is still open.
-  openedReviews?: {
-    url: string;
-    open: boolean;
-  }[];
+  // Merge requests the tab's runs opened, and what the tick has done with each.
+  openedReviews?: OpenedReview[];
   lastActivityAt?: string;
+}
+
+export interface OpenedReview {
+  url: string;
+  title: string;
+  open: boolean;
+  // reviewOpenedCommand ran for it.
+  announced?: boolean;
+  autoMerge?: "enabled";
+  // Ticks that failed to run reviewOpenedCommand or turn on auto-merge; both stop after a few.
+  failures?: number;
 }
 
 export interface AgentState {
