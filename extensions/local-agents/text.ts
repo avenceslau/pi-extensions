@@ -7,8 +7,8 @@ export function slug(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, SLUG_CHARACTERS);
+    .slice(0, SLUG_CHARACTERS)
+    .replace(/^-|-$/g, "");
 }
 
 export function shortHash(text: string): string {
