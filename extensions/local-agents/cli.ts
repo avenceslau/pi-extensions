@@ -50,8 +50,10 @@ if (command === "tick") {
     onlyChecks: flagValues(rest, "--check"),
   });
 } else if (command === "install") {
+  // node is looked up on the job's PATH: process.execPath is a versioned path that breaks when node is upgraded.
   const path = await install(agent, [
-    process.execPath,
+    "/usr/bin/env",
+    "node",
     "--experimental-strip-types",
     fileURLToPath(import.meta.url),
     "tick",
