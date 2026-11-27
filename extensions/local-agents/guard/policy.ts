@@ -9,7 +9,8 @@ const RunPolicySchema = Type.Object({
   worktree: Type.String(),
   gitDirectory: Type.String(),
   statusFile: Type.String(),
-  // open_merge_request appends the URL of each review it opens, so the tick can tell when they are merged.
+  // open_merge_request appends a JSON line with the URL and title of each review it opens, so the tick can announce
+  // it, turn on auto-merge, and tell when it is merged.
   reviewsFile: Type.String(),
   tools: Type.Array(Type.String()),
   bashCommandPatterns: Type.Array(Type.String()),
@@ -54,7 +55,14 @@ const RunStatusFileSchema = Type.Object({
   updatedAt: Type.String(),
 });
 
+const OpenedReviewLineSchema = Type.Object({
+  url: Type.String(),
+  title: Type.String(),
+});
+
 export type RunPolicy = Static<typeof RunPolicySchema>;
+
+export type OpenedReviewLine = Static<typeof OpenedReviewLineSchema>;
 
 export type RunStatusFile = Static<typeof RunStatusFileSchema>;
 
@@ -80,4 +88,13 @@ export function parseRunStatus(text: string): RunStatusFile | undefined {
   const value = parseJson(text);
 
   return Value.Check(RunStatusFileSchema, value) ? value : undefined;
+}
+
+// One line of a run's reviews file; undefined for a line the guard is still writing.
+export function parseOpenedReviewLine(
+  text: string,
+): OpenedReviewLine | undefined {
+  const value = parseJson(text);
+
+  return Value.Check(OpenedReviewLineSchema, value) ? value : undefined;
 }

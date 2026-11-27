@@ -12,3 +12,6 @@ A CI job on the default branch is slow or got slower. Find where its time goes a
 4. Open a merge request with `open_merge_request`, stating the expected saving and how you estimated it; the user must
    confirm it.
 5. If nothing worthwhile is safe to change, say what you found and stop.
+
+A merge request you open gets auto-merge once its pipeline starts, so it merges as soon as the pipeline passes and
+the required approvals are in. Open it only when it is ready to merge as it is.

@@ -310,7 +310,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
       name: "open_merge_request",
       label: "Open merge request",
-      description: `Push HEAD to a new branch and open a merge or pull request into ${targetBranch}. The user sees the title and description and must confirm.`,
+      description: `Push HEAD to a new branch and open a merge or pull request into ${targetBranch}. The user sees the title and description and must confirm. Auto-merge is turned on once its pipeline starts, so it merges when the pipeline passes.`,
       parameters: Type.Object({
         title: Type.String(),
         description: Type.String(),
@@ -322,7 +322,7 @@ export default function (pi: ExtensionAPI) {
           !(await confirmed(
             context,
             `Open a review: ${params.title}`,
-            `${branch} -> ${targetBranch}\n\n${params.description}`,
+            `${branch} -> ${targetBranch}, merged automatically once its pipeline passes\n\n${params.description}`,
           ))
         ) {
           return textResult(
@@ -348,7 +348,10 @@ export default function (pi: ExtensionAPI) {
         const url = created.match(/https?:\/\/\S+/g)?.at(-1);
 
         if (url) {
-          appendFileSync(policy.reviewsFile, `${url}\n`);
+          appendFileSync(
+            policy.reviewsFile,
+            `${JSON.stringify({ url, title: params.title })}\n`,
+          );
         }
 
         return textResult(created);

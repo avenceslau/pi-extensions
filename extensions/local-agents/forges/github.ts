@@ -297,6 +297,34 @@ export function githubClient(
       return runs.map(runTiming);
     },
 
+    async enableAutoMerge(number) {
+      const pull = await json<{ head: { sha: string } }>(
+        `repos/${project}/pulls/${number}`,
+      );
+
+      const { total_count: checks } = await json<{ total_count: number }>(
+        `repos/${project}/commits/${pull.head.sha}/check-runs?per_page=1`,
+      );
+
+      if (checks === 0) {
+        return "waiting";
+      }
+
+      await runProgram("gh", [
+        "pr",
+        "merge",
+        String(number),
+        "--repo",
+        `${host}/${project}`,
+        "--auto",
+        "--merge",
+        "--match-head-commit",
+        pull.head.sha,
+      ]);
+
+      return "enabled";
+    },
+
     async pipelineJobs(pipeline): Promise<JobTiming[]> {
       return (await runJobs(Number(pipeline.id))).map((job) => ({
         name: `${job.workflow_name} / ${job.name}`,
