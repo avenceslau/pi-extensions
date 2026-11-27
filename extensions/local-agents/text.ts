@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 const SLUG_CHARACTERS = 50;
 const HASH_CHARACTERS = 10;
 
+// Lowercase words joined by dashes, never starting or ending with one: tools such as image builds reuse branch
+// names as tags, and a tag cannot end in `-`.
 export function slug(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, SLUG_CHARACTERS);
+    .slice(0, SLUG_CHARACTERS)
+    .replace(/^-+|-+$/g, "");
 }
 
 export function shortHash(text: string): string {

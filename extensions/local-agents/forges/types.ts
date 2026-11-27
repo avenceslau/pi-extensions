@@ -80,6 +80,7 @@ export interface ForgeClient {
   // Pipelines of GitLab merge trains or GitHub merge queues; empty when the project uses neither.
   successfulMergeTrainPipelines(count: number): Promise<Pipeline[]>;
   pipelineJobs(pipeline: Pipeline): Promise<JobTiming[]>;
-  // "waiting" until the merge request has a pipeline, so auto-merge can never mean merging untested code right away.
+  // "waiting" while there is nothing safe to do yet, such as before a pipeline exists, so auto-merge never merges
+  // untested code.
   enableAutoMerge(number: number): Promise<"enabled" | "waiting">;
 }

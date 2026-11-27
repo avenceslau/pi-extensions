@@ -76,6 +76,15 @@ interface GitLabBridge {
 
 const MILLISECONDS_PER_SECOND = 1000;
 
+const RUNNING_PIPELINE_STATUSES = new Set([
+  "created",
+  "waiting_for_resource",
+  "preparing",
+  "pending",
+  "running",
+  "scheduled",
+]);
+
 const MERGE_TRAIN_REF = /^refs\/merge-requests\/\d+\/train$/;
 const MERGE_TRAIN_PAGES = 5;
 const MERGE_TRAIN_PAGE_ITEMS = 100;
@@ -277,14 +286,23 @@ export function gitlabClient(
       return trains.slice(0, count).map(pipelineTiming);
     },
 
-    // Merges only the commit that has the pipeline, once it succeeds, so a later push is not merged unseen.
+    // GitLab queues auto-merge only while a pipeline runs; once the pipeline has finished, the same request merges at
+    // once or fails. So this queues it during a pipeline, merges a merge request that is already mergeable, and
+    // otherwise waits, for example for an approval or a new pipeline. Either way only the commit seen here merges.
     async enableAutoMerge(number) {
       const mergeRequest = await json<{
         sha: string;
-        head_pipeline: { id: number } | null;
+        detailed_merge_status: string;
+        head_pipeline: { status: string } | null;
       }>(`${projectPath}/merge_requests/${number}`);
 
-      if (!mergeRequest.head_pipeline) {
+      const pipelineRunning =
+        mergeRequest.head_pipeline !== null &&
+        RUNNING_PIPELINE_STATUSES.has(mergeRequest.head_pipeline.status);
+
+      const mergeable = mergeRequest.detailed_merge_status === "mergeable";
+
+      if (!pipelineRunning && !mergeable) {
         return "waiting";
       }
 
