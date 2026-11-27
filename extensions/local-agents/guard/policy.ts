@@ -9,6 +9,8 @@ const RunPolicySchema = Type.Object({
   worktree: Type.String(),
   gitDirectory: Type.String(),
   statusFile: Type.String(),
+  // open_merge_request appends the URL of each review it opens, so the tick can tell when they are merged.
+  reviewsFile: Type.String(),
   tools: Type.Array(Type.String()),
   bashCommandPatterns: Type.Array(Type.String()),
   repository: Type.Object({

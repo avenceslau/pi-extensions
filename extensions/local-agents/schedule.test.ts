@@ -10,7 +10,7 @@ const hourly: Check = {
     from: 10,
     to: 19,
   },
-  run: async () => [],
+  run: async () => ({ triggers: [] }),
 };
 
 test("runs a check that never ran, inside its working hours", () => {

@@ -8,6 +8,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // A failure with the same job and error starts one investigation a week.
 const REPEAT_AFTER_MS = 7 * DAY_MS;
 const GROUP_RETENTION_MS = 30 * DAY_MS;
+// A failure that has not happened again for this long counts as addressed.
+const FAILURE_ADDRESSED_AFTER_MS = 3 * DAY_MS;
 const OCCURRENCES_KEPT = 10;
 const LOG_TAIL_LINES = 150;
 const LOG_TAIL_MAX_CHARACTERS = 15_000;
@@ -173,6 +175,7 @@ async function failureTriggers(
     group.handledAt = now.toISOString();
     triggers.push(
       failureTrigger(repository, {
+        groupKey,
         job,
         trunk,
         where,
@@ -203,6 +206,7 @@ function forgetOldGroups(memory: FailureMemory, now: Date): void {
 }
 
 interface Failure {
+  groupKey: string;
   job: FailedJob;
   trunk: string;
   // Where the job ran: the pull request and its author, or the default branch.
@@ -215,7 +219,16 @@ interface Failure {
 
 function failureTrigger(
   repository: Repository,
-  { job, trunk, where, signature, lines, group, pullHeadRef }: Failure,
+  {
+    groupKey,
+    job,
+    trunk,
+    where,
+    signature,
+    lines,
+    group,
+    pullHeadRef,
+  }: Failure,
 ): Trigger {
   const occurrences = group.occurrences
     .map(
@@ -230,6 +243,7 @@ function failureTrigger(
 
   return {
     key: `ci:${repository.url}:${job.id}`,
+    concern: `ci:${groupKey}`,
     playbook: "ci-failure",
     repository: repository.url,
     tab: jobTab(repository, "ci", job.name),
@@ -275,7 +289,22 @@ export const ciFailuresCheck: Check = {
 
     forgetOldGroups(memory, context.now);
 
-    return triggers;
+    const recentGroups = Object.entries(memory.groups ?? {}).filter(
+      ([, group]) => {
+        const last = group.occurrences.at(-1);
+
+        return (
+          last !== undefined &&
+          context.now.getTime() - Date.parse(last.finishedAt) <
+            FAILURE_ADDRESSED_AFTER_MS
+        );
+      },
+    );
+
+    return {
+      triggers,
+      openConcerns: recentGroups.map(([groupKey]) => `ci:${groupKey}`),
+    };
   },
 };
 
@@ -368,6 +397,7 @@ function speedTrigger(
 
   return {
     key: `ci-speed:${repository.url}:${chosen.name}:${date}`,
+    concern: `ci-speed:${repository.url}:${chosen.name}`,
     playbook: "ci-speed",
     repository: repository.url,
     tab: jobTab(repository, "ci speed", chosen.name),
@@ -524,10 +554,10 @@ export const ciSpeedCheck: Check = {
       const trigger = await speedTriggerFor(repository, memory, context.now);
 
       if (trigger) {
-        return [trigger];
+        return { triggers: [trigger] };
       }
     }
 
-    return [];
+    return { triggers: [] };
   },
 };
