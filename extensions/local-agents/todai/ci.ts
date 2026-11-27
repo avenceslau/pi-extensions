@@ -8,6 +8,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // A failure with the same job and error starts one investigation a week.
 const REPEAT_AFTER_MS = 7 * DAY_MS;
 const GROUP_RETENTION_MS = 30 * DAY_MS;
+
 // A failure that has not happened again for this long counts as addressed.
 const FAILURE_ADDRESSED_AFTER_MS = 3 * DAY_MS;
 const OCCURRENCES_KEPT = 10;
@@ -368,12 +369,45 @@ function formatSeconds(seconds: number | undefined): string {
   return seconds === undefined ? "-" : `${Math.round(seconds)}s`;
 }
 
+// The pipelines the speed check compares: pushes to the default branch, and merge trains, whose duration is how long a
+// merge waits.
+interface PipelineSet {
+  // Distinguishes the set's memory, branch, and tab; empty for the default branch, which came first.
+  key: "" | "train";
+  describe(trunk: string): string;
+  fetch(repository: Repository, trunk: string): Promise<Pipeline[]>;
+}
+
+const PIPELINE_SETS: PipelineSet[] = [
+  {
+    key: "",
+    describe: (trunk) => `successful pipelines on ${trunk}`,
+    fetch: (repository, trunk) =>
+      repository.forge.successfulPipelines(trunk, PIPELINES_SAMPLED),
+  },
+  {
+    key: "train",
+    describe: () => "successful merge train pipelines",
+    fetch: (repository) =>
+      repository.forge.successfulMergeTrainPipelines(PIPELINES_SAMPLED),
+  },
+];
+
+function memoryKey(repository: Repository, set: PipelineSet): string {
+  return set.key ? `${repository.url}#${set.key}` : repository.url;
+}
+
+interface SpeedCandidate {
+  repository: Repository;
+  set: PipelineSet;
+  trunk: string;
+  pipelines: Pipeline[];
+  timings: JobSummary[];
+  chosen: JobSummary;
+}
+
 function speedTrigger(
-  repository: Repository,
-  trunk: string,
-  pipelines: Pipeline[],
-  timings: JobSummary[],
-  chosen: JobSummary,
+  { repository, set, trunk, pipelines, timings, chosen }: SpeedCandidate,
   now: Date,
 ): Trigger {
   const reason = isRegression(chosen)
@@ -394,17 +428,26 @@ function speedTrigger(
   );
 
   const [date] = now.toISOString().split("T");
+  const key = memoryKey(repository, set);
+  const where = set.key ? `${set.key} ` : "";
+
+  const trainNote = set.key
+    ? " A merge train pipeline runs for every merge, so its duration is how long each merge waits."
+    : "";
 
   return {
-    key: `ci-speed:${repository.url}:${chosen.name}:${date}`,
-    concern: `ci-speed:${repository.url}:${chosen.name}`,
+    key: `ci-speed:${key}:${chosen.name}:${date}`,
+    concern: `ci-speed:${key}:${chosen.name}`,
     playbook: "ci-speed",
     repository: repository.url,
-    tab: jobTab(repository, "ci speed", chosen.name),
-    worktree: trunkWorktree(trunk, `todai/ci-speed-${slug(chosen.name)}`),
-    prompt: `Make the CI job \`${chosen.name}\` faster: ${reason}.
+    tab: jobTab(repository, `ci speed ${where}`.trim(), chosen.name),
+    worktree: trunkWorktree(
+      trunk,
+      `todai/ci-speed-${where.replace(" ", "-")}${slug(chosen.name)}`,
+    ),
+    prompt: `Make the CI job \`${chosen.name}\` faster in ${set.describe(trunk)}: ${reason}.${trainNote}
 
-Timings from the last ${pipelines.length} successful pipelines on ${trunk}; the median pipeline took ${formatSeconds(pipelineMedian)}. The reference column is the median about a week ago.
+Timings from the last ${pipelines.length} ${set.describe(trunk)}; the median pipeline took ${formatSeconds(pipelineMedian)}. The reference column is the median about a week ago.
 
 | Job | Median | p90 | Reference |
 | --- | --- | --- | --- |
@@ -421,10 +464,11 @@ ${pipelines
 // Job timings for the pipelines, fetching only those not cached from earlier runs.
 async function cachedPipelineJobs(
   repository: Repository,
+  key: string,
   memory: SpeedMemory,
   pipelines: Pipeline[],
 ): Promise<Record<string, JobTiming[]>> {
-  const cached = (memory.jobs ??= {})[repository.url] ?? {};
+  const cached = (memory.jobs ??= {})[key] ?? {};
   const missing = pipelines.filter((pipeline) => !cached[pipeline.id]);
 
   const fetched = await mapWithLimit(missing, API_CONCURRENCY, (pipeline) =>
@@ -438,7 +482,7 @@ async function cachedPipelineJobs(
     ]),
   );
 
-  memory.jobs[repository.url] = jobsByPipeline;
+  memory.jobs[key] = jobsByPipeline;
 
   return jobsByPipeline;
 }
@@ -466,19 +510,17 @@ function withSnapshot(
   ].slice(-SNAPSHOTS_KEPT);
 }
 
-async function speedTriggerFor(
+async function speedCandidate(
   repository: Repository,
+  set: PipelineSet,
   memory: SpeedMemory,
   now: Date,
-): Promise<Trigger | undefined> {
-  const snapshotsByRepository = (memory.snapshots ??= {});
+): Promise<SpeedCandidate | undefined> {
+  const key = memoryKey(repository, set);
+  const snapshotsBySet = (memory.snapshots ??= {});
   const handled = (memory.handled ??= {});
   const trunk = await repository.forge.defaultBranch();
-
-  const pipelines = await repository.forge.successfulPipelines(
-    trunk,
-    PIPELINES_SAMPLED,
-  );
+  const pipelines = await set.fetch(repository, trunk);
 
   if (pipelines.length < MINIMUM_PIPELINES) {
     return undefined;
@@ -486,11 +528,12 @@ async function speedTriggerFor(
 
   const jobsByPipeline = await cachedPipelineJobs(
     repository,
+    key,
     memory,
     pipelines,
   );
 
-  const snapshots = snapshotsByRepository[repository.url] ?? [];
+  const snapshots = snapshotsBySet[key] ?? [];
 
   const reference = snapshots.find(
     (snapshot) =>
@@ -502,7 +545,7 @@ async function speedTriggerFor(
     reference?.medians,
   );
 
-  snapshotsByRepository[repository.url] = withSnapshot(snapshots, timings, now);
+  snapshotsBySet[key] = withSnapshot(snapshots, timings, now);
 
   const slowdown = (timing: JobSummary) =>
     timing.median - (timing.reference ?? timing.median);
@@ -514,7 +557,7 @@ async function speedTriggerFor(
   const candidates = [...regressions, ...timings.slice(0, SLOWEST_JOBS)];
 
   const chosen = candidates.find((timing) => {
-    const at = handled[`${repository.url}:${timing.name}`];
+    const at = handled[`${key}:${timing.name}`];
 
     return !at || now.getTime() - Date.parse(at) >= REPEAT_AFTER_MS;
   });
@@ -523,9 +566,16 @@ async function speedTriggerFor(
     return undefined;
   }
 
-  handled[`${repository.url}:${chosen.name}`] = now.toISOString();
+  handled[`${key}:${chosen.name}`] = now.toISOString();
 
-  return speedTrigger(repository, trunk, pipelines, timings, chosen, now);
+  return {
+    repository,
+    set,
+    trunk,
+    pipelines,
+    timings,
+    chosen,
+  };
 }
 
 // Starts at most one optimisation per run, so an hourly schedule cannot flood the session.
@@ -541,20 +591,29 @@ export const ciSpeedCheck: Check = {
     // SAFETY: only this check writes its memory, and only with this shape.
     const memory = context.memory as SpeedMemory;
 
-    // Each hour starts with a different repository, so one with many slow jobs cannot starve the others.
-    const offset =
-      context.now.getHours() % Math.max(1, context.repositories.length);
+    const sources = context.repositories.flatMap((repository) =>
+      PIPELINE_SETS.map((set) => ({
+        repository,
+        set,
+      })),
+    );
 
-    const repositories = [
-      ...context.repositories.slice(offset),
-      ...context.repositories.slice(0, offset),
-    ];
+    // Each hour starts with a different repository and pipeline set, so one with many slow jobs cannot starve the rest.
+    const offset = context.now.getHours() % Math.max(1, sources.length);
 
-    for (const repository of repositories) {
-      const trigger = await speedTriggerFor(repository, memory, context.now);
+    for (const { repository, set } of [
+      ...sources.slice(offset),
+      ...sources.slice(0, offset),
+    ]) {
+      const candidate = await speedCandidate(
+        repository,
+        set,
+        memory,
+        context.now,
+      );
 
-      if (trigger) {
-        return { triggers: [trigger] };
+      if (candidate) {
+        return { triggers: [speedTrigger(candidate, context.now)] };
       }
     }
 

@@ -51,6 +51,7 @@ const MILLISECONDS_PER_SECOND = 1000;
 const STATUS_SUFFIX = ".status.json";
 const REVIEWS_SUFFIX = ".reviews.json";
 const REVIEW_NUMBER = /\/(?:merge_requests|pull)\/(\d+)/;
+
 // An addressed tab stays open this long after its last activity, so it does not vanish while the user reads it.
 const ADDRESSED_TAB_IDLE_MS = 30 * 60 * 1000;
 
@@ -207,7 +208,7 @@ async function runCheck(
   const started = Date.now();
 
   try {
-    const result = await check.run({
+    const checkResult = await check.run({
       agent: context.definition.name,
       repositories: [...context.repositoryByUrl.values()],
       config: context.config,
@@ -216,13 +217,18 @@ async function runCheck(
       memory,
       log: (message) => log(`${check.name}: ${message}`),
     });
-    const triggers = result.triggers.map((trigger) => ({
+
+    const triggers = checkResult.triggers.map((trigger) => ({
       ...trigger,
       check: check.name,
     }));
+
     const openConcerns = new Map(
-      result.openConcerns ? [[check.name, new Set(result.openConcerns)]] : [],
+      checkResult.openConcerns
+        ? [[check.name, new Set(checkResult.openConcerns)]]
+        : [],
     );
+
     const seconds = Math.round(
       (Date.now() - started) / MILLISECONDS_PER_SECOND,
     );
@@ -575,6 +581,7 @@ async function refreshOpenedReviews(
     const repository = [...context.repositoryByUrl.values()].find((candidate) =>
       review.url.startsWith(`${candidate.forge.url}/`),
     );
+
     const number = Number(REVIEW_NUMBER.exec(review.url)?.[1]);
 
     if (repository && Number.isInteger(number)) {
@@ -630,6 +637,7 @@ async function removeFinishedTabs(context: TickContext): Promise<void> {
 
     for (const worktree of tab.worktrees) {
       const repository = context.repositoryByUrl.get(worktree.repository);
+
       const removed =
         repository !== undefined &&
         (await removeWorktree(repository, worktree.path, worktree.branch));

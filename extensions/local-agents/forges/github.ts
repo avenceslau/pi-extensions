@@ -101,6 +101,17 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
+function runTiming(workflowRun: GitHubRun): Pipeline {
+  return {
+    id: String(workflowRun.id),
+    url: workflowRun.html_url,
+    seconds:
+      (Date.parse(workflowRun.updated_at) -
+        Date.parse(workflowRun.run_started_at)) /
+      MILLISECONDS_PER_SECOND,
+  };
+}
+
 export function githubClient(
   host: string,
   project: string,
@@ -273,14 +284,17 @@ export function githubClient(
         `repos/${project}/actions/runs?branch=${encodeURIComponent(branch)}&status=success&event=push&per_page=${count}`,
       );
 
-      return runs.map((workflowRun) => ({
-        id: String(workflowRun.id),
-        url: workflowRun.html_url,
-        seconds:
-          (Date.parse(workflowRun.updated_at) -
-            Date.parse(workflowRun.run_started_at)) /
-          MILLISECONDS_PER_SECOND,
-      }));
+      return runs.map(runTiming);
+    },
+
+    async successfulMergeTrainPipelines(count): Promise<Pipeline[]> {
+      const { workflow_runs: runs } = await json<{
+        workflow_runs: GitHubRun[];
+      }>(
+        `repos/${project}/actions/runs?event=merge_group&status=success&per_page=${count}`,
+      );
+
+      return runs.map(runTiming);
     },
 
     async pipelineJobs(pipeline): Promise<JobTiming[]> {

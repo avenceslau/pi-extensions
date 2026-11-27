@@ -77,5 +77,7 @@ export interface ForgeClient {
   failedJobs(since: Date): Promise<FailedJob[]>;
   jobLog(job: FailedJob): Promise<string>;
   successfulPipelines(branch: string, count: number): Promise<Pipeline[]>;
+  // Pipelines of GitLab merge trains or GitHub merge queues; empty when the project uses neither.
+  successfulMergeTrainPipelines(count: number): Promise<Pipeline[]>;
   pipelineJobs(pipeline: Pipeline): Promise<JobTiming[]>;
 }

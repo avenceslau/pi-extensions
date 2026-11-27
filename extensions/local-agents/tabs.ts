@@ -33,8 +33,10 @@ export function hasActiveRun(
 // merged or closed. Tabs opened before concerns were tracked have none and are never addressed this way.
 export function isAddressed(tab: TabRecord): boolean {
   const reviews = tab.openedReviews ?? [];
+
   const reviewsSettled =
     reviews.length > 0 && reviews.every((review) => !review.open);
+
   const concerns = tab.concerns ?? [];
 
   return (

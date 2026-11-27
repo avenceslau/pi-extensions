@@ -34,6 +34,7 @@ test("a concern its check stops reporting is addressed, and reopens when reporte
       },
     ],
   });
+
   const agent = state(record);
 
   updateConcerns(agent, new Map([["conflicts", new Set<string>()]]));

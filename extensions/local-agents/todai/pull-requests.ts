@@ -103,6 +103,7 @@ export const conflictsCheck: Check = {
       const pulls = (await ownPullRequests(repository)).filter(
         (pull) => !pull.fromFork,
       );
+
       const statuses = await mapWithLimit(pulls, API_CONCURRENCY, (pull) =>
         repository.forge.conflictStatus(pull),
       );
@@ -154,11 +155,12 @@ function needsAttention(
 // someone else newer than the user's latest note.
 export function awaitsReply(threads: Thread[], username: string): boolean {
   const notes = threads.flatMap((thread) => thread.notes);
+
   const lastOwnNote = Math.max(
     0,
-    ...notes
-      .filter((note) => note.author === username)
-      .map((note) => Date.parse(note.createdAt)),
+    ...notes.flatMap((note) =>
+      note.author === username ? [Date.parse(note.createdAt)] : [],
+    ),
   );
 
   return threads.some((thread) => {
@@ -217,6 +219,15 @@ ${attention.map((thread) => formatThread(thread, seen)).join("\n\n")}`,
   });
 }
 
+// A record of the check's memory by tab key, created on first use.
+function memoryRecord<T>(
+  memory: Record<string, unknown>,
+  name: string,
+): Record<string, T> {
+  // SAFETY: only this file's checks write their memory, and each name always holds a record of one value type.
+  return (memory[name] ??= {}) as Record<string, T>;
+}
+
 // Drops the memory of tabs whose pull request is no longer open.
 function forgetClosedTabs(
   openTabs: Set<string>,
@@ -236,19 +247,15 @@ export const commentsCheck: Check = {
   everyMinutes: 5,
   async run(context) {
     const triggers: Trigger[] = [];
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const seenByTab = (context.memory.seen ??= {}) as Record<string, string[]>;
+    const seenByTab = memoryRecord<string[]>(context.memory, "seen");
 
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const updatedByTab = (context.memory.updatedAt ??= {}) as Record<
-      string,
-      string
-    >;
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const awaitingByTab = (context.memory.awaitingReply ??= {}) as Record<
-      string,
-      boolean
-    >;
+    const updatedByTab = memoryRecord<string>(context.memory, "updatedAt");
+
+    const awaitingByTab = memoryRecord<boolean>(
+      context.memory,
+      "awaitingReply",
+    );
+
     const openTabs = new Set<string>();
 
     for (const repository of context.repositories) {
@@ -374,17 +381,10 @@ export const hygieneCheck: Check = {
   async run(context) {
     const triggers: Trigger[] = [];
 
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const lintedByTab = (context.memory.linted ??= {}) as Record<
-      string,
-      string
-    >;
+    const lintedByTab = memoryRecord<string>(context.memory, "linted");
 
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const flaggedByTab = (context.memory.flagged ??= {}) as Record<
-      string,
-      boolean
-    >;
+    const flaggedByTab = memoryRecord<boolean>(context.memory, "flagged");
+
     const openTabs = new Set<string>();
 
     for (const repository of context.repositories) {

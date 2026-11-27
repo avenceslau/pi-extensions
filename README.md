@@ -114,9 +114,9 @@ With no arguments, `/hygiene` and `hygiene_lint` check uncommitted changes and u
 - prepares answers to new review comments on your merge requests and waits for you;
 - lints new commits on other people's merge requests and reports when there is an error or 10 or more warnings;
 - investigates every new CI failure on the default branch or an open merge request, and offers a merge request that fixes flaky ones;
-- once an hour, from 10:00 to 19:00 on weekdays, picks one slow or slower CI job and offers a merge request that speeds it up.
+- once an hour, from 10:00 to 19:00 on weekdays, picks one slow or slower CI job, in default-branch pipelines or merge train (merge queue) pipelines, and offers a merge request that speeds it up.
 
-A check's first run records what already exists without starting anything, so an agent acts only on what changes after you install it.
+A check's first run records what already exists without starting anything, so an agent acts only on what changes after you install it. A tab also closes once everything its runs were started for is addressed (the conflicts are gone, the comments are answered, the CI failure stopped recurring, or the merge requests the agent opened are merged or closed) and it has been idle for 30 minutes.
 
 ```ts
 export default {
