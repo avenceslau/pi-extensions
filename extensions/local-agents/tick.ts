@@ -281,8 +281,16 @@ export async function tick(
   }
 }
 
-function hasLiveRun(tab: TabRecord, runs: Map<string, RunStatusFile>): boolean {
-  return tab.runIds.some((runId) => runs.has(runId));
+// A session that finished its task stays open for the user but is idle, so it does not hold the tab's worktree.
+function hasActiveRun(
+  tab: TabRecord,
+  runs: Map<string, RunStatusFile>,
+): boolean {
+  return tab.runIds.some((runId) => {
+    const status = runs.get(runId)?.status;
+
+    return status !== undefined && status !== "idle";
+  });
 }
 
 async function launchQueued(
@@ -304,13 +312,17 @@ async function launchQueued(
 
   const windows = await windowIds(agent);
   const waiting: Trigger[] = [];
+  // Tabs that got a run in this tick; their status files may not exist yet.
+  const startedTabs = new Set<string>();
 
   for (const trigger of state.queue) {
     const tab = state.tabs[trigger.tab.key];
     const tabOpen = tab !== undefined && windows.has(tab.windowId);
+    const tabBusy =
+      startedTabs.has(trigger.tab.key) || (tabOpen && hasActiveRun(tab, runs));
 
     // Runs in one tab share a worktree, so a second one waits until the first has finished.
-    if (working >= capacity || (tabOpen && hasLiveRun(tab, runs))) {
+    if (working >= capacity || tabBusy) {
       waiting.push(trigger);
       continue;
     }
@@ -361,6 +373,7 @@ async function launchQueued(
           runIds: [],
         };
         state.tabs[trigger.tab.key] = record;
+        windows.add(windowId);
       }
 
       if (!record.worktrees.some((known) => known.path === worktree.path)) {
@@ -372,6 +385,7 @@ async function launchQueued(
       }
 
       record.runIds.push(launch.runId);
+      startedTabs.add(trigger.tab.key);
       state.handled[trigger.key] = now.toISOString();
       working += 1;
       log(`started ${trigger.playbook} for ${trigger.tab.label}`);
@@ -399,7 +413,7 @@ async function launchQueued(
 }
 
 // Removes tabs the user closed and tabs whose pull request is no longer open, with their clean worktrees. A tab with
-// a live run is kept.
+// an active run is kept; closing a tab ends its idle sessions, whose transcripts stay in pi's session files.
 async function removeFinishedTabs(
   agent: string,
   state: AgentState,
@@ -411,7 +425,7 @@ async function removeFinishedTabs(
   const runs = liveRuns(runsDirectory);
 
   for (const [key, tab] of Object.entries(state.tabs)) {
-    if (hasLiveRun(tab, runs)) {
+    if (hasActiveRun(tab, runs)) {
       continue;
     }
 

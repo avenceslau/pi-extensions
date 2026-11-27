@@ -80,6 +80,11 @@ interface GraphQLThreads {
   };
 }
 
+const PAGE_SIZE = 100;
+const MAX_PAGES = 50;
+// Failed runs examined per tick; the cursor then keeps only jobs that completed after it.
+const FAILED_RUNS_EXAMINED = 50;
+
 const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -108,6 +113,25 @@ export function githubClient(
   // SAFETY: each caller names the response type its endpoint documents.
   const json = async <T>(path: string): Promise<T> =>
     JSON.parse(await api(path)) as T;
+
+  // Every page, so a review missing from the result is really not open.
+  const listAll = async <T>(path: string): Promise<T[]> => {
+    const items: T[] = [];
+
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const batch = await json<T[]>(
+        `${path}&per_page=${PAGE_SIZE}&page=${page}`,
+      );
+
+      items.push(...batch);
+
+      if (batch.length < PAGE_SIZE) {
+        return items;
+      }
+    }
+
+    throw new Error(`${path} has more than ${MAX_PAGES} pages`);
+  };
 
   let pulls: Promise<GitHubPullRequest[]> | undefined;
   let user: Promise<string> | undefined;
@@ -147,9 +171,7 @@ export function githubClient(
     },
 
     async openPullRequests(): Promise<PullRequest[]> {
-      pulls ??= json<GitHubPullRequest[]>(
-        `repos/${project}/pulls?state=open&per_page=100`,
-      );
+      pulls ??= listAll<GitHubPullRequest>(`repos/${project}/pulls?state=open`);
 
       return (await pulls).map((pull) => ({
         number: pull.number,
@@ -223,11 +245,15 @@ export function githubClient(
       const { workflow_runs: runs } = await json<{
         workflow_runs: GitHubRun[];
       }>(
-        `repos/${project}/actions/runs?status=failure&per_page=30&created=${encodeURIComponent(`>=${since.toISOString()}`)}`,
+        `repos/${project}/actions/runs?status=failure&per_page=${FAILED_RUNS_EXAMINED}`,
       );
 
+      // A run is last updated when it completes, so older runs hold no job that failed after the cursor.
+      const recent = runs.filter(
+        (workflowRun) => new Date(workflowRun.updated_at) > since,
+      );
       const jobs = await mapWithLimit(
-        runs,
+        recent,
         API_CONCURRENCY,
         async (workflowRun) =>
           (await runJobs(workflowRun.id))
@@ -244,7 +270,9 @@ export function githubClient(
             })),
       );
 
-      return jobs.flat();
+      // The runs API can only filter by creation time, so a run that started before the cursor but failed after it
+      // is kept by comparing completion times instead.
+      return jobs.flat().filter((job) => new Date(job.finishedAt) > since);
     },
 
     jobLog(job) {

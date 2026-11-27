@@ -72,6 +72,9 @@ interface GitLabBridge {
   } | null;
 }
 
+const PAGE_SIZE = 100;
+const MAX_PAGES = 50;
+
 const MERGE_REQUEST_REF = /^refs\/merge-requests\/(\d+)\/(?:head|merge|train)$/;
 
 export function gitlabClient(
@@ -86,12 +89,31 @@ export function gitlabClient(
   const json = async <T>(path: string): Promise<T> =>
     JSON.parse(await api(path)) as T;
 
+  // Every page, so a review missing from the result is really not open.
+  const listAll = async <T>(path: string): Promise<T[]> => {
+    const items: T[] = [];
+
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const batch = await json<T[]>(
+        `${path}&per_page=${PAGE_SIZE}&page=${page}`,
+      );
+
+      items.push(...batch);
+
+      if (batch.length < PAGE_SIZE) {
+        return items;
+      }
+    }
+
+    throw new Error(`${path} has more than ${MAX_PAGES} pages`);
+  };
+
   let mergeRequests: Promise<GitLabMergeRequest[]> | undefined;
   let user: Promise<string> | undefined;
 
   const listMergeRequests = () => {
-    mergeRequests ??= json<GitLabMergeRequest[]>(
-      `${projectPath}/merge_requests?state=opened&per_page=100`,
+    mergeRequests ??= listAll<GitLabMergeRequest>(
+      `${projectPath}/merge_requests?state=opened`,
     );
 
     return mergeRequests;

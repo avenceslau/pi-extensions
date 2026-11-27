@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +46,8 @@ export async function prepareLaunch(
     throw new Error(`${definition.name} has no playbook ${trigger.playbook}`);
   }
 
-  const runId = `${now.toISOString().replace(/[:.]/g, "-")}-${trigger.playbook}`;
+  // Launches in one tick share `now`, so the random suffix keeps their policy, prompt, and status files apart.
+  const runId = `${now.toISOString().replace(/[:.]/g, "-")}-${trigger.playbook}-${randomUUID().slice(0, 8)}`;
   const runsDirectory = join(agentDirectory(definition.name), "runs");
   const policyPath = join(runsDirectory, `${runId}.policy.json`);
   const promptPath = join(runsDirectory, `${runId}.prompt.md`);
