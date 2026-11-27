@@ -2,6 +2,10 @@ import type { Check } from "./definition.ts";
 
 const MINUTE_MS = 60_000;
 
+// Date.getDay() numbers.
+const MONDAY = 1;
+const FRIDAY = 5;
+
 // launchd starts a tick every few minutes and a tick can start a little early, so a check counts as due one minute
 // before its interval has fully passed.
 export function isDue(
@@ -12,7 +16,7 @@ export function isDue(
   if (check.workingHours) {
     const day = now.getDay();
     const hour = now.getHours();
-    const weekday = day >= 1 && day <= 5;
+    const weekday = day >= MONDAY && day <= FRIDAY;
 
     if (
       !weekday ||

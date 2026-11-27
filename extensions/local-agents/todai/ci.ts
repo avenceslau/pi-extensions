@@ -11,6 +11,8 @@ const GROUP_RETENTION_MS = 30 * DAY_MS;
 const OCCURRENCES_KEPT = 10;
 const LOG_TAIL_LINES = 150;
 const LOG_TAIL_MAX_CHARACTERS = 15_000;
+const SIGNATURE_MAX_CHARACTERS = 300;
+const TAB_JOB_NAME_MAX_CHARACTERS = 60;
 
 const PIPELINES_SAMPLED = 20;
 const MINIMUM_PIPELINES = 5;
@@ -21,6 +23,9 @@ const REGRESSION_MINIMUM_SECONDS = 60;
 const SNAPSHOT_EVERY_MS = DAY_MS;
 const SNAPSHOTS_KEPT = 14;
 const REFERENCE_MINIMUM_AGE_MS = 5 * DAY_MS;
+const RECENT_PIPELINES_SHOWN = 5;
+const MEDIAN = 0.5;
+const NINETIETH_PERCENTILE = 0.9;
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]|\u001b\][^\u0007]*\u0007/g;
 const GITLAB_SECTION = /section_(?:start|end):\d+:[\w.-]+\r?/g;
@@ -68,7 +73,7 @@ export function errorSignature(lines: string[]): string {
     .trim()
     .replace(/\b[0-9a-f]{7,}\b/gi, "<hash>")
     .replace(/\d+(?:\.\d+)?/g, "<n>")
-    .slice(0, 300);
+    .slice(0, SIGNATURE_MAX_CHARACTERS);
 }
 
 interface FailureGroup {
@@ -100,7 +105,7 @@ function trunkWorktree(
 function jobTab(repository: Repository, prefix: string, jobName: string): Tab {
   return {
     key: `${repository.url}:${prefix}:${jobName}`,
-    label: `${prefix} - ${truncate(jobName, 60)}`,
+    label: `${prefix} - ${truncate(jobName, TAB_JOB_NAME_MAX_CHARACTERS)}`,
   };
 }
 
@@ -167,44 +172,50 @@ async function failureTriggers(
 
     group.handledAt = now.toISOString();
     triggers.push(
-      failureTrigger(
-        repository,
+      failureTrigger(repository, {
         job,
         trunk,
         where,
         signature,
         lines,
         group,
-        pull?.headRef,
-      ),
+        pullHeadRef: pull?.headRef,
+      }),
     );
   }
 
   since[repository.url] = latest;
 
-  for (const [key, group] of Object.entries(groups)) {
+  return triggers;
+}
+
+function forgetOldGroups(memory: FailureMemory, now: Date): void {
+  for (const [key, group] of Object.entries(memory.groups ?? {})) {
     const last = group.occurrences.at(-1);
 
     if (
       !last ||
       now.getTime() - Date.parse(last.finishedAt) > GROUP_RETENTION_MS
     ) {
-      delete groups[key];
+      delete memory.groups?.[key];
     }
   }
+}
 
-  return triggers;
+interface Failure {
+  job: FailedJob;
+  trunk: string;
+  // Where the job ran: the pull request and its author, or the default branch.
+  where: string;
+  signature: string;
+  lines: string[];
+  group: FailureGroup;
+  pullHeadRef: string | undefined;
 }
 
 function failureTrigger(
   repository: Repository,
-  job: FailedJob,
-  trunk: string,
-  where: string,
-  signature: string,
-  lines: string[],
-  group: FailureGroup,
-  pullHeadRef: string | undefined,
+  { job, trunk, where, signature, lines, group, pullHeadRef }: Failure,
 ): Trigger {
   const occurrences = group.occurrences
     .map(
@@ -261,6 +272,8 @@ export const ciFailuresCheck: Check = {
       );
     }
 
+    forgetOldGroups(memory, context.now);
+
     return triggers;
   },
 };
@@ -272,15 +285,20 @@ interface JobSummary {
   reference?: number;
 }
 
+interface Snapshot {
+  at: string;
+  medians: Record<string, number>;
+}
+
 interface SpeedMemory {
-  snapshots?: Record<string, { at: string; medians: Record<string, number> }[]>;
+  snapshots?: Record<string, Snapshot[]>;
   handled?: Record<string, string>;
   // Job timings by repository and pipeline id, so each run fetches only new pipelines.
   jobs?: Record<string, Record<string, JobTiming[]>>;
 }
 
-function percentile(values: number[], fraction: number): number {
-  const sorted = [...values].sort((a, b) => a - b);
+function percentile(samples: number[], fraction: number): number {
+  const sorted = [...samples].sort((a, b) => a - b);
 
   return (
     sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))] ??
@@ -301,8 +319,8 @@ function jobSummaries(
   return [...durations.entries()]
     .map(([name, seconds]) => ({
       name,
-      median: percentile(seconds, 0.5),
-      p90: percentile(seconds, 0.9),
+      median: percentile(seconds, MEDIAN),
+      p90: percentile(seconds, NINETIETH_PERCENTILE),
       reference: reference?.[name],
     }))
     .sort((a, b) => b.median - a.median);
@@ -342,11 +360,13 @@ function speedTrigger(
 
   const pipelineMedian = percentile(
     pipelines.map((pipeline) => pipeline.seconds),
-    0.5,
+    MEDIAN,
   );
 
+  const [date] = now.toISOString().split("T");
+
   return {
-    key: `ci-speed:${repository.url}:${chosen.name}:${now.toISOString().slice(0, 10)}`,
+    key: `ci-speed:${repository.url}:${chosen.name}:${date}`,
     playbook: "ci-speed",
     repository: repository.url,
     tab: jobTab(repository, "ci speed", chosen.name),
@@ -361,10 +381,58 @@ ${table}
 
 Recent pipelines:
 ${pipelines
-  .slice(0, 5)
+  .slice(0, RECENT_PIPELINES_SHOWN)
   .map((pipeline) => `- ${pipeline.url} (${formatSeconds(pipeline.seconds)})`)
   .join("\n")}`,
   };
+}
+
+// Job timings for the pipelines, fetching only those not cached from earlier runs.
+async function cachedPipelineJobs(
+  repository: Repository,
+  memory: SpeedMemory,
+  pipelines: Pipeline[],
+): Promise<Record<string, JobTiming[]>> {
+  const cached = (memory.jobs ??= {})[repository.url] ?? {};
+  const missing = pipelines.filter((pipeline) => !cached[pipeline.id]);
+
+  const fetched = await mapWithLimit(missing, API_CONCURRENCY, (pipeline) =>
+    repository.forge.pipelineJobs(pipeline),
+  );
+
+  const jobsByPipeline = Object.fromEntries(
+    pipelines.map((pipeline) => [
+      pipeline.id,
+      cached[pipeline.id] ?? fetched[missing.indexOf(pipeline)],
+    ]),
+  );
+
+  memory.jobs[repository.url] = jobsByPipeline;
+
+  return jobsByPipeline;
+}
+
+// Adds today's medians unless a snapshot was taken in the last day.
+function withSnapshot(
+  snapshots: Snapshot[],
+  timings: JobSummary[],
+  now: Date,
+): Snapshot[] {
+  const latest = snapshots.at(-1);
+
+  if (latest && now.getTime() - Date.parse(latest.at) < SNAPSHOT_EVERY_MS) {
+    return snapshots;
+  }
+
+  return [
+    ...snapshots,
+    {
+      at: now.toISOString(),
+      medians: Object.fromEntries(
+        timings.map((timing) => [timing.name, timing.median]),
+      ),
+    },
+  ].slice(-SNAPSHOTS_KEPT);
 }
 
 async function speedTriggerFor(
@@ -385,21 +453,11 @@ async function speedTriggerFor(
     return undefined;
   }
 
-  const cached = (memory.jobs ??= {})[repository.url] ?? {};
-  const missing = pipelines.filter((pipeline) => !cached[pipeline.id]);
-
-  const fetched = await mapWithLimit(missing, API_CONCURRENCY, (pipeline) =>
-    repository.forge.pipelineJobs(pipeline),
+  const jobsByPipeline = await cachedPipelineJobs(
+    repository,
+    memory,
+    pipelines,
   );
-
-  const jobsByPipeline = Object.fromEntries(
-    pipelines.map((pipeline) => [
-      pipeline.id,
-      cached[pipeline.id] ?? fetched[missing.indexOf(pipeline)],
-    ]),
-  );
-
-  memory.jobs[repository.url] = jobsByPipeline;
 
   const snapshots = snapshotsByRepository[repository.url] ?? [];
 
@@ -413,26 +471,14 @@ async function speedTriggerFor(
     reference?.medians,
   );
 
-  const latestSnapshot = snapshots.at(-1);
+  snapshotsByRepository[repository.url] = withSnapshot(snapshots, timings, now);
 
-  if (
-    !latestSnapshot ||
-    now.getTime() - Date.parse(latestSnapshot.at) >= SNAPSHOT_EVERY_MS
-  ) {
-    snapshotsByRepository[repository.url] = [
-      ...snapshots,
-      {
-        at: now.toISOString(),
-        medians: Object.fromEntries(
-          timings.map((timing) => [timing.name, timing.median]),
-        ),
-      },
-    ].slice(-SNAPSHOTS_KEPT);
-  }
+  const slowdown = (timing: JobSummary) =>
+    timing.median - (timing.reference ?? timing.median);
 
   const regressions = timings
     .filter(isRegression)
-    .sort((a, b) => b.median - b.reference! - (a.median - a.reference!));
+    .sort((a, b) => slowdown(b) - slowdown(a));
 
   const candidates = [...regressions, ...timings.slice(0, SLOWEST_JOBS)];
 

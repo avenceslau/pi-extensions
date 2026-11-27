@@ -7,8 +7,9 @@ import type {
   Tab,
   Trigger,
 } from "../definition.ts";
-import { API_CONCURRENCY, mapWithLimit, run } from "../exec.ts";
+import { API_CONCURRENCY, mapWithLimit, runProgram } from "../exec.ts";
 import type { PullRequest, Thread } from "../forges/types.ts";
+import { errorMessage } from "../errors.ts";
 import { shortHash, truncate } from "../text.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -17,13 +18,14 @@ const REVIEW_WARNINGS_MAX_COUNT = 10;
 const REPORT_MAX_CHARACTERS = 20_000;
 const NOTE_MAX_CHARACTERS = 2_000;
 const LINT_CONCURRENCY = 4;
+const TAB_TITLE_MAX_CHARACTERS = 60;
 
 export function pullRequestTab(repository: Repository, pull: PullRequest): Tab {
-  const prefix = repository.forge.kind === "gitlab" ? "!" : "#";
+  const prefix = repository.forge.reviewPrefix;
 
   return {
     key: `${repository.url}${prefix}${pull.number}`,
-    label: `${prefix}${pull.number} - ${truncate(pull.title, 60)}`,
+    label: `${prefix}${pull.number} - ${truncate(pull.title, TAB_TITLE_MAX_CHARACTERS)}`,
     pullRequest: {
       repository: repository.url,
       number: pull.number,
@@ -35,10 +37,8 @@ function pullRequestWorktree(
   repository: Repository,
   pull: PullRequest,
 ): Trigger["worktree"] {
-  const kind = repository.forge.kind === "gitlab" ? "mr" : "pr";
-
   return {
-    branch: `todai/${kind}-${pull.number}`,
+    branch: `todai/${repository.forge.reviewKind}-${pull.number}`,
     fetch: [pull.headRef],
     start: pull.headSha,
   };
@@ -99,13 +99,13 @@ export const conflictsCheck: Check = {
         (pull) => !pull.fromFork,
       );
 
-      const conflicts = await mapWithLimit(pulls, API_CONCURRENCY, (pull) =>
-        repository.forge.hasConflicts(pull),
+      const statuses = await mapWithLimit(pulls, API_CONCURRENCY, (pull) =>
+        repository.forge.conflictStatus(pull),
       );
 
       triggers.push(
         ...pulls
-          .filter((_pull, index) => conflicts[index] === true)
+          .filter((_pull, index) => statuses[index] === "conflicting")
           .map((pull) => rebaseTrigger(repository, pull)),
       );
     }
@@ -178,6 +178,20 @@ ${attention.map((thread) => formatThread(thread, seen)).join("\n\n")}`,
   });
 }
 
+// Drops the memory of tabs whose pull request is no longer open.
+function forgetClosedTabs(
+  openTabs: Set<string>,
+  ...records: Record<string, unknown>[]
+): void {
+  for (const record of records) {
+    for (const key of Object.keys(record)) {
+      if (!openTabs.has(key)) {
+        delete record[key];
+      }
+    }
+  }
+}
+
 export const commentsCheck: Check = {
   name: "comments",
   everyMinutes: 5,
@@ -196,14 +210,16 @@ export const commentsCheck: Check = {
       const username = await repository.forge.currentUser();
       const own = await ownPullRequests(repository);
 
+      const tabKey = (pull: PullRequest) =>
+        pullRequestTab(repository, pull).key;
+
       for (const pull of own) {
-        openTabs.add(pullRequestTab(repository, pull).key);
+        openTabs.add(tabKey(pull));
       }
 
       // A new comment changes the merge request's update time, so unchanged ones need no thread fetch.
       const pulls = own.filter(
-        (pull) =>
-          updatedByTab[pullRequestTab(repository, pull).key] !== pull.updatedAt,
+        (pull) => updatedByTab[tabKey(pull)] !== pull.updatedAt,
       );
 
       const threadsByPull = await mapWithLimit(pulls, API_CONCURRENCY, (pull) =>
@@ -211,8 +227,8 @@ export const commentsCheck: Check = {
       );
 
       for (const [index, pull] of pulls.entries()) {
-        const tab = pullRequestTab(repository, pull);
-        const seen = new Set(seenByTab[tab.key] ?? []);
+        const key = tabKey(pull);
+        const seen = new Set(seenByTab[key] ?? []);
         const threads = threadsByPull[index];
 
         const attention = threads.filter((thread) =>
@@ -223,8 +239,8 @@ export const commentsCheck: Check = {
           thread.notes.some((note) => !seen.has(note.id)),
         );
 
-        updatedByTab[tab.key] = pull.updatedAt;
-        seenByTab[tab.key] = threads.flatMap((thread) =>
+        updatedByTab[key] = pull.updatedAt;
+        seenByTab[key] = threads.flatMap((thread) =>
           thread.notes.map((note) => note.id),
         );
 
@@ -236,12 +252,7 @@ export const commentsCheck: Check = {
       }
     }
 
-    for (const key of Object.keys(seenByTab)) {
-      if (!openTabs.has(key)) {
-        delete seenByTab[key];
-        delete updatedByTab[key];
-      }
-    }
+    forgetClosedTabs(openTabs, seenByTab, updatedByTab);
 
     return triggers;
   },
@@ -251,7 +262,8 @@ async function reviewDiff(
   repository: Repository,
   pull: PullRequest,
 ): Promise<string> {
-  const git = (...args: string[]) => run("git", args, { cwd: repository.path });
+  const git = (...args: string[]) =>
+    runProgram("git", args, { cwd: repository.path });
 
   const base = await git(
     "merge-base",
@@ -309,8 +321,6 @@ export const hygieneCheck: Check = {
   everyMinutes: 5,
   async run(context) {
     const triggers: Trigger[] = [];
-    // The first run records the current heads without linting them, since its triggers would not start anyway.
-    const firstRun = context.memory.linted === undefined;
 
     const lintedByTab = (context.memory.linted ??= {}) as Record<
       string,
@@ -326,25 +336,32 @@ export const hygieneCheck: Check = {
         (pull) => pull.author !== username && !pull.authorIsBot && !pull.draft,
       );
 
+      const tabKey = (pull: PullRequest) =>
+        pullRequestTab(repository, pull).key;
+
       const unlinted = pulls.filter(
-        (pull) =>
-          lintedByTab[pullRequestTab(repository, pull).key] !== pull.headSha,
+        (pull) => lintedByTab[tabKey(pull)] !== pull.headSha,
       );
 
       for (const pull of pulls) {
-        openTabs.add(pullRequestTab(repository, pull).key);
-
-        if (firstRun) {
-          lintedByTab[pullRequestTab(repository, pull).key] = pull.headSha;
-        }
+        openTabs.add(tabKey(pull));
       }
 
-      if (firstRun || unlinted.length === 0) {
+      // The first run records the current heads without linting them, since its triggers would not start anyway.
+      if (context.firstRun) {
+        for (const pull of pulls) {
+          lintedByTab[tabKey(pull)] = pull.headSha;
+        }
+
+        continue;
+      }
+
+      if (unlinted.length === 0) {
         continue;
       }
 
       // One fetch for every merge request, since parallel fetches into one clone contend for its ref locks.
-      await run(
+      await runProgram(
         "git",
         [
           "fetch",
@@ -362,12 +379,12 @@ export const hygieneCheck: Check = {
         (pull) =>
           hygieneTrigger(context, repository, pull).then(
             (trigger) => {
-              lintedByTab[pullRequestTab(repository, pull).key] = pull.headSha;
+              lintedByTab[tabKey(pull)] = pull.headSha;
 
               return trigger;
             },
-            (error: Error) => {
-              context.log(`could not lint ${pull.url}: ${error.message}`);
+            (error: unknown) => {
+              context.log(`could not lint ${pull.url}: ${errorMessage(error)}`);
 
               return undefined;
             },
@@ -377,11 +394,7 @@ export const hygieneCheck: Check = {
       triggers.push(...lintTriggers.filter((trigger) => trigger !== undefined));
     }
 
-    for (const key of Object.keys(lintedByTab)) {
-      if (!openTabs.has(key)) {
-        delete lintedByTab[key];
-      }
-    }
+    forgetClosedTabs(openTabs, lintedByTab);
 
     return triggers;
   },

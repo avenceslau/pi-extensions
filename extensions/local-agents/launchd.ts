@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { run } from "./exec.ts";
+import { runProgram } from "./exec.ts";
 import { agentDirectory } from "./state.ts";
 
 const TICK_SECONDS = 300;
@@ -14,8 +14,8 @@ function plistPath(agent: string): string {
   return join(homedir(), "Library", "LaunchAgents", `${label(agent)}.plist`);
 }
 
-function escapeXml(value: string): string {
-  return value
+function escapeXml(text: string): string {
+  return text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
@@ -24,10 +24,8 @@ function escapeXml(value: string): string {
 function plist(agent: string, programArguments: string[]): string {
   const log = join(agentDirectory(agent), "tick.log");
 
-  const strings = (values: string[]) =>
-    values
-      .map((value) => `    <string>${escapeXml(value)}</string>`)
-      .join("\n");
+  const strings = (texts: string[]) =>
+    texts.map((text) => `    <string>${escapeXml(text)}</string>`).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -74,9 +72,11 @@ export async function install(
   mkdirSync(agentDirectory(agent), { recursive: true });
   mkdirSync(join(homedir(), "Library", "LaunchAgents"), { recursive: true });
   // bootout fails when the job is not loaded yet, which is the state install wants.
-  await run("launchctl", ["bootout", domain(), path]).catch(() => undefined);
+  await runProgram("launchctl", ["bootout", domain(), path]).catch(
+    () => undefined,
+  );
   writeFileSync(path, plist(agent, programArguments));
-  await run("launchctl", ["bootstrap", domain(), path]);
+  await runProgram("launchctl", ["bootstrap", domain(), path]);
 
   return path;
 }
@@ -85,6 +85,8 @@ export async function uninstall(agent: string): Promise<void> {
   const path = plistPath(agent);
 
   // bootout fails when the job is not loaded, which is the state uninstall wants.
-  await run("launchctl", ["bootout", domain(), path]).catch(() => undefined);
+  await runProgram("launchctl", ["bootout", domain(), path]).catch(
+    () => undefined,
+  );
   rmSync(path, { force: true });
 }

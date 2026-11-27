@@ -1,4 +1,5 @@
-import { run } from "../exec.ts";
+import { runProgram } from "../exec.ts";
+import { listAllPages } from "./pagination.ts";
 import type {
   FailedJob,
   ForgeClient,
@@ -72,8 +73,7 @@ interface GitLabBridge {
   } | null;
 }
 
-const PAGE_SIZE = 100;
-const MAX_PAGES = 50;
+const MILLISECONDS_PER_SECOND = 1000;
 
 const MERGE_REQUEST_REF = /^refs\/merge-requests\/(\d+)\/(?:head|merge|train)$/;
 
@@ -83,37 +83,21 @@ export function gitlabClient(
   isBot: (username: string) => boolean,
 ): ForgeClient {
   const projectPath = `projects/${encodeURIComponent(project)}`;
-  const api = (path: string) => run("glab", ["api", "--hostname", host, path]);
+
+  const api = (path: string) =>
+    runProgram("glab", ["api", "--hostname", host, path]);
 
   // SAFETY: each caller names the response type its endpoint documents.
   const json = async <T>(path: string): Promise<T> =>
     JSON.parse(await api(path)) as T;
 
-  // Every page, so a review missing from the result is really not open.
-  const listAll = async <T>(path: string): Promise<T[]> => {
-    const items: T[] = [];
-
-    for (let page = 1; page <= MAX_PAGES; page += 1) {
-      const batch = await json<T[]>(
-        `${path}&per_page=${PAGE_SIZE}&page=${page}`,
-      );
-
-      items.push(...batch);
-
-      if (batch.length < PAGE_SIZE) {
-        return items;
-      }
-    }
-
-    throw new Error(`${path} has more than ${MAX_PAGES} pages`);
-  };
-
   let mergeRequests: Promise<GitLabMergeRequest[]> | undefined;
   let user: Promise<string> | undefined;
 
   const listMergeRequests = () => {
-    mergeRequests ??= listAll<GitLabMergeRequest>(
+    mergeRequests ??= listAllPages(
       `${projectPath}/merge_requests?state=opened`,
+      (pagePath) => json<GitLabMergeRequest[]>(pagePath),
     );
 
     return mergeRequests;
@@ -142,6 +126,8 @@ export function gitlabClient(
 
   return {
     kind: "gitlab",
+    reviewPrefix: "!",
+    reviewKind: "mr",
     host,
     project,
     url: `https://${host}/${project}`,
@@ -175,12 +161,12 @@ export function gitlabClient(
       }));
     },
 
-    async hasConflicts(pullRequest) {
+    async conflictStatus(pullRequest) {
       const mergeRequest = (await listMergeRequests()).find(
         (candidate) => candidate.iid === pullRequest.number,
       );
 
-      return mergeRequest?.has_conflicts;
+      return mergeRequest?.has_conflicts ? "conflicting" : "mergeable";
     },
 
     async threads(pullRequest): Promise<Thread[]> {
@@ -253,7 +239,7 @@ export function gitlabClient(
         url: pipeline.web_url,
         seconds:
           (Date.parse(pipeline.updated_at) - Date.parse(pipeline.created_at)) /
-          1000,
+          MILLISECONDS_PER_SECOND,
       }));
     },
 

@@ -1,4 +1,4 @@
-import { run } from "./exec.ts";
+import { runProgram } from "./exec.ts";
 
 interface RexWindow {
   window_id: string;
@@ -6,14 +6,15 @@ interface RexWindow {
 }
 
 async function sessionLabels(): Promise<string[]> {
-  const { sessions } = JSON.parse(await run("rex", ["ls", "--json"])) as {
+  const { sessions } = JSON.parse(
+    await runProgram("rex", ["ls", "--json"]),
+  ) as {
     sessions: { label: string }[];
   };
 
   return sessions.map((session) => session.label);
 }
 
-// The session's first window follows the agent's log, so the session shows what the checks are doing.
 export async function ensureSession(
   session: string,
   logPath: string,
@@ -22,7 +23,7 @@ export async function ensureSession(
     return;
   }
 
-  await run("rex", [
+  await runProgram("rex", [
     "new",
     session,
     "--window",
@@ -38,7 +39,7 @@ export async function ensureSession(
 
 export async function windowIds(session: string): Promise<Set<string>> {
   const { windows } = JSON.parse(
-    await run("rex", ["window", "ls", "-s", session, "--json"]),
+    await runProgram("rex", ["window", "ls", "-s", session, "--json"]),
   ) as { windows: RexWindow[] };
 
   return new Set(windows.map((window) => window.window_id));
@@ -51,7 +52,7 @@ export async function openTab(
   command: string[],
 ): Promise<string> {
   const created = JSON.parse(
-    await run("rex", [
+    await runProgram("rex", [
       "window",
       "new",
       "-s",
@@ -76,7 +77,7 @@ export async function addPane(
   cwd: string,
   command: string[],
 ): Promise<void> {
-  await run("rex", [
+  await runProgram("rex", [
     "run",
     "-s",
     session,
@@ -97,5 +98,5 @@ export async function closeWindow(
   session: string,
   windowId: string,
 ): Promise<void> {
-  await run("rex", ["window", "close", "-s", session, windowId]);
+  await runProgram("rex", ["window", "close", "-s", session, windowId]);
 }

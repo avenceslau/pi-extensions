@@ -11,14 +11,17 @@ import type {
   PiExtensionsConfig,
 } from "../shared/config-types.ts";
 import type {
+  Check,
   LocalAgentDefinition,
   Repository,
   Trigger,
 } from "./definition.ts";
-import { expandHome } from "./command-policy.ts";
-import { run } from "./exec.ts";
+import { errorCode, errorMessage } from "./errors.ts";
+import { runProgram } from "./exec.ts";
 import { forgeClient } from "./forges/index.ts";
+import { parseRunStatus, type RunStatusFile } from "./guard/policy.ts";
 import { prepareLaunch } from "./launch.ts";
+import { expandHome } from "./paths.ts";
 import {
   addPane,
   closeWindow,
@@ -26,7 +29,6 @@ import {
   openTab,
   windowIds,
 } from "./rex.ts";
-import type { RunStatusFile } from "./run-policy.ts";
 import { isDue } from "./schedule.ts";
 import {
   agentDirectory,
@@ -39,6 +41,8 @@ import { prepareWorktree, removeWorktree } from "./worktree.ts";
 
 const DEFAULT_MAX_RUNNING_AGENTS = 3;
 const LAUNCH_ATTEMPTS = 3;
+const MILLISECONDS_PER_SECOND = 1000;
+const STATUS_SUFFIX = ".status.json";
 
 export interface TickOptions {
   // Print the triggers instead of starting runs, and save nothing.
@@ -47,13 +51,24 @@ export interface TickOptions {
   onlyChecks: string[];
 }
 
+interface TickContext {
+  definition: LocalAgentDefinition;
+  agentConfig: LocalAgentConfig;
+  config: PiExtensionsConfig;
+  state: AgentState;
+  repositoryByUrl: Map<string, Repository>;
+  runsDirectory: string;
+  now: Date;
+  log(message: string): void;
+}
+
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
 
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return errorCode(error) === "EPERM";
   }
 }
 
@@ -63,7 +78,7 @@ function acquireLock(directory: string): (() => void) | undefined {
   try {
     writeFileSync(path, String(process.pid), { flag: "wx" });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (errorCode(error) !== "EEXIST") {
       throw error;
     }
 
@@ -82,15 +97,15 @@ function liveRuns(runsDirectory: string): Map<string, RunStatusFile> {
   const runs = new Map<string, RunStatusFile>();
 
   const names = readdirSync(runsDirectory).filter((name) =>
-    name.endsWith(".status.json"),
+    name.endsWith(STATUS_SUFFIX),
   );
 
   for (const name of names) {
     const path = join(runsDirectory, name);
-    const status = JSON.parse(readFileSync(path, "utf8")) as RunStatusFile;
+    const status = parseRunStatus(readFileSync(path, "utf8"));
 
-    if (isAlive(status.pid)) {
-      runs.set(name.slice(0, -".status.json".length), status);
+    if (status && isAlive(status.pid)) {
+      runs.set(name.slice(0, -STATUS_SUFFIX.length), status);
     } else {
       rmSync(path, { force: true });
     }
@@ -125,7 +140,7 @@ async function notify(title: string, message: string): Promise<void> {
   }
 
   // A notification is a courtesy; the run has started either way.
-  await run("osascript", [
+  await runProgram("osascript", [
     "-e",
     `display notification ${JSON.stringify(message)} with title ${JSON.stringify(title)}`,
   ]).catch(() => undefined);
@@ -146,6 +161,90 @@ function enqueue(state: AgentState, triggers: Trigger[]): number {
   }
 
   return added;
+}
+
+async function runCheck(
+  context: TickContext,
+  check: Check,
+): Promise<{ triggers: Trigger[]; baseline: Trigger[] }> {
+  const { state, now, log } = context;
+  const memory = structuredClone(state.checks[check.name]?.memory ?? {});
+  const firstRun = state.checks[check.name]?.lastRunAt === undefined;
+  const started = Date.now();
+
+  try {
+    const triggers = await check.run({
+      agent: context.definition.name,
+      repositories: [...context.repositoryByUrl.values()],
+      config: context.config,
+      now,
+      firstRun,
+      memory,
+      log: (message) => log(`${check.name}: ${message}`),
+    });
+
+    const seconds = Math.round(
+      (Date.now() - started) / MILLISECONDS_PER_SECOND,
+    );
+
+    state.checks[check.name] = {
+      lastRunAt: now.toISOString(),
+      memory,
+    };
+    log(`${check.name}: ${triggers.length} trigger(s) in ${seconds}s`);
+
+    return firstRun && !check.actOnFirstRun
+      ? { triggers: [], baseline: triggers }
+      : { triggers, baseline: [] };
+  } catch (error) {
+    log(`${check.name} failed: ${errorMessage(error)}`);
+
+    return { triggers: [], baseline: [] };
+  }
+}
+
+async function runDueChecks(
+  context: TickContext,
+  onlyChecks: string[],
+): Promise<{ triggers: Trigger[]; baseline: Trigger[] }> {
+  const due = context.definition.checks.filter((check) =>
+    onlyChecks.length > 0
+      ? onlyChecks.includes(check.name)
+      : isDue(check, context.state.checks[check.name]?.lastRunAt, context.now),
+  );
+
+  const outcomes = await Promise.all(
+    due.map((check) => runCheck(context, check)),
+  );
+
+  return {
+    triggers: outcomes.flatMap((outcome) => outcome.triggers),
+    baseline: outcomes.flatMap((outcome) => outcome.baseline),
+  };
+}
+
+function printDryRun(
+  context: TickContext,
+  triggers: Trigger[],
+  baseline: Trigger[],
+): void {
+  const fresh = triggers.filter(
+    (trigger) => context.state.handled[trigger.key] === undefined,
+  );
+
+  for (const trigger of fresh) {
+    console.log(
+      `\n## ${trigger.tab.label} · ${trigger.playbook}\n${trigger.key}\n\n${trigger.prompt}`,
+    );
+  }
+
+  context.log(`${triggers.length - fresh.length} trigger(s) already handled`);
+
+  for (const trigger of baseline) {
+    console.log(
+      `\n## ${trigger.tab.label} · ${trigger.playbook} (first run: recorded, not started)\n${trigger.key}`,
+    );
+  }
 }
 
 export async function tick(
@@ -176,74 +275,26 @@ export async function tick(
     const state = readState(agent);
     const repositories = repositoriesFor(agentConfig, config);
 
-    const due = definition.checks.filter((check) =>
-      options.onlyChecks.length > 0
-        ? options.onlyChecks.includes(check.name)
-        : isDue(check, state.checks[check.name]?.lastRunAt, now),
+    const context: TickContext = {
+      definition,
+      agentConfig,
+      config,
+      state,
+      repositoryByUrl: new Map(
+        repositories.map((repository) => [repository.url, repository]),
+      ),
+      runsDirectory,
+      now,
+      log,
+    };
+
+    const { triggers, baseline } = await runDueChecks(
+      context,
+      options.onlyChecks,
     );
-
-    const baseline: Trigger[] = [];
-
-    // Checks run at the same time; each keeps its own memory, and they share the forge clients' cached lists.
-    const triggersByCheck = await Promise.all(
-      due.map(async (check) => {
-        const memory = structuredClone(state.checks[check.name]?.memory ?? {});
-        const firstRun = state.checks[check.name]?.lastRunAt === undefined;
-        const started = Date.now();
-
-        try {
-          const triggers = await check.run({
-            agent,
-            repositories,
-            config,
-            now,
-            memory,
-            log: (message) => log(`${check.name}: ${message}`),
-          });
-
-          state.checks[check.name] = {
-            lastRunAt: now.toISOString(),
-            memory,
-          };
-          log(
-            `${check.name}: ${triggers.length} trigger(s) in ${Math.round((Date.now() - started) / 1000)}s`,
-          );
-
-          if (firstRun && !check.actOnFirstRun) {
-            baseline.push(...triggers);
-
-            return [];
-          }
-
-          return triggers;
-        } catch (error) {
-          log(`${check.name} failed: ${(error as Error).message}`);
-
-          return [];
-        }
-      }),
-    );
-
-    const checkTriggers = triggersByCheck.flat();
 
     if (options.dryRun) {
-      const fresh = checkTriggers.filter(
-        (trigger) => state.handled[trigger.key] === undefined,
-      );
-
-      for (const trigger of fresh) {
-        console.log(
-          `\n## ${trigger.tab.label} · ${trigger.playbook}\n${trigger.key}\n\n${trigger.prompt}`,
-        );
-      }
-
-      log(`${checkTriggers.length - fresh.length} trigger(s) already handled`);
-
-      for (const trigger of baseline) {
-        console.log(
-          `\n## ${trigger.tab.label} · ${trigger.playbook} (first run: recorded, not started)\n${trigger.key}`,
-        );
-      }
+      printDryRun(context, triggers, baseline);
 
       return;
     }
@@ -258,23 +309,15 @@ export async function tick(
       );
     }
 
-    const added = enqueue(state, checkTriggers);
+    const added = enqueue(state, triggers);
 
     if (added > 0) {
       log(`queued ${added} trigger(s)`);
     }
 
     await ensureSession(agent, join(directory, "tick.log"));
-    await removeFinishedTabs(agent, state, repositories, runsDirectory, log);
-    await launchQueued(
-      definition,
-      agentConfig,
-      state,
-      repositories,
-      runsDirectory,
-      now,
-      log,
-    );
+    await removeFinishedTabs(context);
+    await launchQueued(context);
     writeState(agent, state, now);
   } finally {
     release();
@@ -293,18 +336,70 @@ function hasActiveRun(
   });
 }
 
-async function launchQueued(
-  definition: LocalAgentDefinition,
-  agentConfig: LocalAgentConfig,
-  state: AgentState,
-  repositories: Repository[],
-  runsDirectory: string,
-  now: Date,
-  log: (message: string) => void,
-): Promise<void> {
-  const agent = definition.name;
-  const runs = liveRuns(runsDirectory);
-  const capacity = agentConfig.maxRunningAgents ?? DEFAULT_MAX_RUNNING_AGENTS;
+// Prepares the worktree and starts the run in the trigger's tab, opening the tab when it is not open; returns the
+// tab's record with the run added.
+async function startRun(
+  context: TickContext,
+  trigger: Trigger,
+  repository: Repository,
+  openRecord: TabRecord | undefined,
+): Promise<TabRecord> {
+  const agent = context.definition.name;
+  const worktree = await prepareWorktree(repository, trigger.worktree);
+
+  const launch = await prepareLaunch(
+    context.definition,
+    context.agentConfig,
+    trigger,
+    repository,
+    worktree,
+    context.now,
+  );
+
+  let record = openRecord;
+
+  if (record) {
+    await addPane(
+      agent,
+      record.windowId,
+      trigger.playbook,
+      worktree.path,
+      launch.command,
+    );
+  } else {
+    record = {
+      ...trigger.tab,
+      windowId: await openTab(
+        agent,
+        trigger.tab.label,
+        worktree.path,
+        launch.command,
+      ),
+      worktrees: [],
+      runIds: [],
+    };
+  }
+
+  if (!record.worktrees.some((known) => known.path === worktree.path)) {
+    record.worktrees.push({
+      repository: repository.url,
+      path: worktree.path,
+      branch: trigger.worktree.branch,
+    });
+  }
+
+  record.runIds.push(launch.runId);
+
+  return record;
+}
+
+async function launchQueued(context: TickContext): Promise<void> {
+  const { state, now, log } = context;
+  const agent = context.definition.name;
+  const runs = liveRuns(context.runsDirectory);
+
+  const capacity =
+    context.agentConfig.maxRunningAgents ?? DEFAULT_MAX_RUNNING_AGENTS;
 
   let working = [...runs.values()].filter(
     (run) => run.status === "working",
@@ -317,9 +412,13 @@ async function launchQueued(
 
   for (const trigger of state.queue) {
     const tab = state.tabs[trigger.tab.key];
-    const tabOpen = tab !== undefined && windows.has(tab.windowId);
+
+    const openRecord =
+      tab !== undefined && windows.has(tab.windowId) ? tab : undefined;
+
     const tabBusy =
-      startedTabs.has(trigger.tab.key) || (tabOpen && hasActiveRun(tab, runs));
+      startedTabs.has(trigger.tab.key) ||
+      (openRecord !== undefined && hasActiveRun(openRecord, runs));
 
     // Runs in one tab share a worktree, so a second one waits until the first has finished.
     if (working >= capacity || tabBusy) {
@@ -327,9 +426,7 @@ async function launchQueued(
       continue;
     }
 
-    const repository = repositories.find(
-      (candidate) => candidate.url === trigger.repository,
-    );
+    const repository = context.repositoryByUrl.get(trigger.repository);
 
     if (!repository) {
       log(`dropping ${trigger.key}: ${trigger.repository} is not configured`);
@@ -337,68 +434,20 @@ async function launchQueued(
     }
 
     try {
-      const worktree = await prepareWorktree(repository, trigger.worktree);
+      const record = await startRun(context, trigger, repository, openRecord);
 
-      const launch = await prepareLaunch(
-        definition,
-        agentConfig,
-        trigger,
-        repository,
-        worktree,
-        now,
-      );
-
-      let record = tab;
-
-      if (record && tabOpen) {
-        await addPane(
-          agent,
-          record.windowId,
-          trigger.playbook,
-          worktree.path,
-          launch.command,
-        );
-      } else {
-        const windowId = await openTab(
-          agent,
-          trigger.tab.label,
-          worktree.path,
-          launch.command,
-        );
-
-        record = {
-          ...trigger.tab,
-          windowId,
-          worktrees: [],
-          runIds: [],
-        };
-        state.tabs[trigger.tab.key] = record;
-        windows.add(windowId);
-      }
-
-      if (!record.worktrees.some((known) => known.path === worktree.path)) {
-        record.worktrees.push({
-          repository: repository.url,
-          path: worktree.path,
-          branch: trigger.worktree.branch,
-        });
-      }
-
-      record.runIds.push(launch.runId);
+      state.tabs[trigger.tab.key] = record;
+      windows.add(record.windowId);
       startedTabs.add(trigger.tab.key);
       state.handled[trigger.key] = now.toISOString();
       working += 1;
       log(`started ${trigger.playbook} for ${trigger.tab.label}`);
-
-      if (trigger.notify) {
-        await notify(agent, trigger.notify);
-      }
     } catch (error) {
       const attempts = (state.attempts[trigger.key] ?? 0) + 1;
 
       state.attempts[trigger.key] = attempts;
       log(
-        `could not start ${trigger.key} (attempt ${attempts}): ${(error as Error).message}`,
+        `could not start ${trigger.key} (attempt ${attempts}): ${errorMessage(error)}`,
       );
 
       if (attempts < LAUNCH_ATTEMPTS) {
@@ -406,55 +455,61 @@ async function launchQueued(
       } else {
         state.handled[trigger.key] = now.toISOString();
       }
+
+      continue;
+    }
+
+    if (trigger.notify) {
+      await notify(agent, trigger.notify);
     }
   }
 
   state.queue = waiting;
 }
 
+// A tab without a pull request, or whose repository is no longer configured, counts as open: only the user closes it.
+async function pullRequestStillOpen(
+  context: TickContext,
+  tab: TabRecord,
+): Promise<boolean> {
+  const repository =
+    tab.pullRequest && context.repositoryByUrl.get(tab.pullRequest.repository);
+
+  if (!tab.pullRequest || !repository) {
+    return true;
+  }
+
+  const open = await repository.forge.openPullRequests();
+
+  return open.some((pull) => pull.number === tab.pullRequest?.number);
+}
+
 // Removes tabs the user closed and tabs whose pull request is no longer open, with their clean worktrees. A tab with
 // an active run is kept; closing a tab ends its idle sessions, whose transcripts stay in pi's session files.
-async function removeFinishedTabs(
-  agent: string,
-  state: AgentState,
-  repositories: Repository[],
-  runsDirectory: string,
-  log: (message: string) => void,
-): Promise<void> {
+async function removeFinishedTabs(context: TickContext): Promise<void> {
+  const agent = context.definition.name;
   const windows = await windowIds(agent);
-  const runs = liveRuns(runsDirectory);
+  const runs = liveRuns(context.runsDirectory);
 
-  for (const [key, tab] of Object.entries(state.tabs)) {
+  for (const [key, tab] of Object.entries(context.state.tabs)) {
+    const windowOpen = windows.has(tab.windowId);
+
     if (hasActiveRun(tab, runs)) {
       continue;
     }
 
-    const closedByUser = !windows.has(tab.windowId);
+    if (windowOpen && (await pullRequestStillOpen(context, tab))) {
+      continue;
+    }
 
-    if (!closedByUser) {
-      const repository = repositories.find(
-        (candidate) => candidate.url === tab.pullRequest?.repository,
-      );
-
-      if (!repository) {
-        continue;
-      }
-
-      const open = await repository.forge.openPullRequests();
-
-      if (open.some((pull) => pull.number === tab.pullRequest?.number)) {
-        continue;
-      }
-
+    if (windowOpen) {
       await closeWindow(agent, tab.windowId);
     }
 
-    const kept = [];
+    const kept: string[] = [];
 
     for (const worktree of tab.worktrees) {
-      const repository = repositories.find(
-        (candidate) => candidate.url === worktree.repository,
-      );
+      const repository = context.repositoryByUrl.get(worktree.repository);
 
       const removed =
         repository !== undefined &&
@@ -466,10 +521,10 @@ async function removeFinishedTabs(
     }
 
     if (kept.length > 0) {
-      log(`kept ${kept.join(", ")}: uncommitted changes`);
+      context.log(`kept ${kept.join(", ")}: uncommitted changes`);
     }
 
-    delete state.tabs[key];
-    log(`removed the tab ${tab.label}`);
+    delete context.state.tabs[key];
+    context.log(`removed the tab ${tab.label}`);
   }
 }

@@ -5,7 +5,7 @@ import {
   GIT_READ_COMMANDS,
   GIT_WRITE_COMMANDS,
   READ_ONLY_COMMANDS,
-} from "../command-policy.ts";
+} from "../guard/commands.ts";
 import type {
   LocalAgentDefinition,
   Playbook,
@@ -17,10 +17,6 @@ import {
   conflictsCheck,
   hygieneCheck,
 } from "./pull-requests.ts";
-
-// Todai keeps CI and merge requests healthy: it rebases the user's conflicting merge requests, prepares answers to
-// review comments, reports on badly styled merge requests from others, investigates every CI failure and fixes the
-// flaky ones, and makes slow CI jobs faster.
 
 const PLAYBOOKS_DIRECTORY = join(
   dirname(fileURLToPath(import.meta.url)),

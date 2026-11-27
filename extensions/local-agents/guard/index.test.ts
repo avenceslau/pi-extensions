@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { toolPathIsInside } from "./guard.ts";
+import { toolPathIsInside } from "./index.ts";
 
 const worktree = realpathSync(mkdtempSync(join(tmpdir(), "guard-")));
 

@@ -5,7 +5,7 @@ import {
   FORGE_READ_COMMANDS,
   GIT_READ_COMMANDS,
   READ_ONLY_COMMANDS,
-} from "./command-policy.ts";
+} from "./commands.ts";
 
 const ROOT = "/work/repo";
 

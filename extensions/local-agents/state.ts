@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Tab, Trigger } from "./definition.ts";
+import { errorCode } from "./errors.ts";
 
 export interface TabRecord extends Tab {
   windowId: string;
@@ -57,7 +58,7 @@ export function readState(agent: string): AgentState {
       ) as Partial<AgentState>),
     };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (errorCode(error) === "ENOENT") {
       return empty;
     }
 

@@ -3,7 +3,6 @@ import { githubClient } from "./github.ts";
 import { gitlabClient } from "./gitlab.ts";
 import type { ForgeClient } from "./types.ts";
 
-// `url` is the host followed by the project path, such as github.com/owner/repo.
 export function forgeClient(
   url: string,
   forges: Record<string, Forge>,

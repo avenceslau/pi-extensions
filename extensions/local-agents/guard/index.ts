@@ -1,4 +1,10 @@
-import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -7,21 +13,19 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { ENV_FILE_READ_DENY_RULES } from "../../protect-env-files/index.ts";
+import { shellQuote } from "../../shared/shell.ts";
+import { expandHome, isInside } from "../paths.ts";
+import { slug } from "../text.ts";
+import { checkCommand } from "./commands.ts";
 import {
-  ENV_FILE_READ_DENY_RULES,
-  shellQuote,
-} from "../protect-env-files/index.ts";
-import { checkCommand, expandHome, isInside } from "./command-policy.ts";
-import { slug } from "./text.ts";
-import {
+  parseRunPolicy,
   POLICY_VARIABLE,
   type RunPolicy,
   type RunStatus,
-} from "./run-policy.ts";
+} from "./policy.ts";
 
-// Loaded explicitly into local agent sessions with -e; does nothing elsewhere. It enforces the run policy on every
-// tool call, runs bash inside a macOS sandbox that only lets it write to the worktree and build caches, and adds the
-// tools that act outside the worktree (push, open a review, comment), each limited by the policy.
+// Loaded only into local agent sessions, with -e; without LOCAL_AGENT_POLICY it does nothing.
 
 const PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
 
@@ -72,10 +76,6 @@ export function toolPathIsInside(
   return isInside(worktree, target);
 }
 
-function sandboxString(value: string): string {
-  return JSON.stringify(value);
-}
-
 export function sandboxProfile(policy: RunPolicy): string {
   const writable = [
     policy.worktree,
@@ -87,7 +87,7 @@ export function sandboxProfile(policy: RunPolicy): string {
   ].map(realPathOrSelf);
 
   const allowWrites = writable
-    .map((path) => `(allow file-write* (subpath ${sandboxString(path)}))`)
+    .map((path) => `(allow file-write* (subpath ${JSON.stringify(path)}))`)
     .join("");
 
   return `(version 1)(allow default)${ENV_FILE_READ_DENY_RULES}(deny file-write*)${allowWrites}`;
@@ -105,39 +105,129 @@ function textResult(text: string) {
   };
 }
 
-function readPolicy(): RunPolicy | undefined {
-  const path = process.env[POLICY_VARIABLE];
+type ForgeCommand = [program: string, args: string[]];
 
-  // SAFETY: the launcher writes this file from a RunPolicy.
-  return path
-    ? (JSON.parse(readFileSync(path, "utf8")) as RunPolicy)
-    : undefined;
+function forgeCommands(repository: RunPolicy["repository"]) {
+  const githubRepository = `${repository.host}/${repository.project}`;
+
+  if (repository.forge === "gitlab") {
+    return {
+      createReview: (
+        branch: string,
+        targetBranch: string,
+        title: string,
+        description: string,
+      ): ForgeCommand => [
+        "glab",
+        [
+          "mr",
+          "create",
+          "--repo",
+          repository.url,
+          "--source-branch",
+          branch,
+          "--target-branch",
+          targetBranch,
+          "--title",
+          title,
+          "--description",
+          description,
+          "--yes",
+        ],
+      ],
+      comment: (number: number, body: string): ForgeCommand => [
+        "glab",
+        [
+          "mr",
+          "note",
+          String(number),
+          "--repo",
+          repository.url,
+          "--message",
+          body,
+        ],
+      ],
+    };
+  }
+
+  return {
+    createReview: (
+      branch: string,
+      targetBranch: string,
+      title: string,
+      description: string,
+    ): ForgeCommand => [
+      "gh",
+      [
+        "pr",
+        "create",
+        "--repo",
+        githubRepository,
+        "--head",
+        branch,
+        "--base",
+        targetBranch,
+        "--title",
+        title,
+        "--body",
+        description,
+      ],
+    ],
+    comment: (number: number, body: string): ForgeCommand => [
+      "gh",
+      [
+        "pr",
+        "comment",
+        String(number),
+        "--repo",
+        githubRepository,
+        "--body",
+        body,
+      ],
+    ],
+  };
 }
 
 export default function (pi: ExtensionAPI) {
-  const policy = readPolicy();
+  const policyPath = process.env[POLICY_VARIABLE];
 
+  if (!policyPath) {
+    return;
+  }
+
+  const policy = parseRunPolicy(readFileSync(policyPath, "utf8"));
+
+  // A session that was meant to be restricted but cannot read its limits gets no tools at all.
   if (!policy) {
+    pi.on("tool_call", () => ({
+      block: true,
+      reason: `${policyPath} is not a valid run policy, so every tool is blocked`,
+    }));
+
     return;
   }
 
   const worktree = realPathOrSelf(policy.worktree);
-  const repositoryUrl = policy.repository.url;
+  const forge = forgeCommands(policy.repository);
   const statusFile = policy.statusFile;
   let pushedSha = policy.push?.expectedSha;
 
+  // Written to a temporary file and renamed, so a tick never reads a half-written status.
   function writeStatus(status: RunStatus): void {
+    const temporaryFile = `${statusFile}.tmp`;
+
     writeFileSync(
-      statusFile,
+      temporaryFile,
       JSON.stringify({
         pid: process.pid,
         status,
         updatedAt: new Date().toISOString(),
       }),
     );
+    renameSync(temporaryFile, statusFile);
   }
 
-  async function run(command: string, args: string[]) {
+  async function runInWorktree(command: string, args: string[]) {
     const output = await pi.exec(command, args, {
       cwd: worktree,
       timeout: 120_000,
@@ -191,7 +281,7 @@ export default function (pi: ExtensionAPI) {
     if (isToolCallEventType("bash", event)) {
       const verdict = checkCommand(
         event.input.command,
-        policy.commands,
+        policy.bashCommandPatterns,
         worktree,
         realPathOrSelf(context.cwd),
       );
@@ -225,7 +315,7 @@ export default function (pi: ExtensionAPI) {
       description: `Force-push HEAD to ${branch}, only if the remote branch is still at the commit this task started from or the one this tool last pushed.`,
       parameters: Type.Object({}),
       async execute(_id, _params, _signal, _update, context) {
-        const head = await run("git", ["rev-parse", "HEAD"]);
+        const head = await runInWorktree("git", ["rev-parse", "HEAD"]);
 
         if (
           askFirst &&
@@ -238,7 +328,7 @@ export default function (pi: ExtensionAPI) {
           return textResult("The user declined the push.");
         }
 
-        await run("git", [
+        await runInWorktree("git", [
           "push",
           `--force-with-lease=refs/heads/${branch}:${pushedSha}`,
           "origin",
@@ -277,39 +367,20 @@ export default function (pi: ExtensionAPI) {
           );
         }
 
-        await run("git", ["push", "origin", `HEAD:refs/heads/${branch}`]);
+        await runInWorktree("git", [
+          "push",
+          "origin",
+          `HEAD:refs/heads/${branch}`,
+        ]);
 
-        const created =
-          policy.repository.forge === "gitlab"
-            ? await run("glab", [
-                "mr",
-                "create",
-                "--repo",
-                repositoryUrl,
-                "--source-branch",
-                branch,
-                "--target-branch",
-                targetBranch,
-                "--title",
-                params.title,
-                "--description",
-                params.description,
-                "--yes",
-              ])
-            : await run("gh", [
-                "pr",
-                "create",
-                "--repo",
-                `${policy.repository.host}/${policy.repository.project}`,
-                "--head",
-                branch,
-                "--base",
-                targetBranch,
-                "--title",
-                params.title,
-                "--body",
-                params.description,
-              ]);
+        const created = await runInWorktree(
+          ...forge.createReview(
+            branch,
+            targetBranch,
+            params.title,
+            params.description,
+          ),
+        );
 
         return textResult(created);
       },
@@ -333,25 +404,7 @@ export default function (pi: ExtensionAPI) {
           );
         }
 
-        await (policy.repository.forge === "gitlab"
-          ? run("glab", [
-              "mr",
-              "note",
-              String(number),
-              "--repo",
-              repositoryUrl,
-              "--message",
-              params.body,
-            ])
-          : run("gh", [
-              "pr",
-              "comment",
-              String(number),
-              "--repo",
-              `${policy.repository.host}/${policy.repository.project}`,
-              "--body",
-              params.body,
-            ]));
+        await runInWorktree(...forge.comment(number, params.body));
 
         return textResult("Posted the comment.");
       },

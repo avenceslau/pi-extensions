@@ -52,7 +52,6 @@ export interface LocalAgentConfig {
   thinking?: string;
   // Extension files every agent session loads besides the guard, such as the one that provides the model.
   extensions?: string[];
-  // Agents working at once; triggers past it wait for a later tick.
   maxRunningAgents?: number;
   // Regular expressions for usernames treated as bots, whose reviews and comments are ignored.
   ignoredAuthors?: string[];

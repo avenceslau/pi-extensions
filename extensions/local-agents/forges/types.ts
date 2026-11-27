@@ -29,7 +29,6 @@ export interface Note {
 
 export interface Thread {
   id: string;
-  // A resolvable thread, such as a code review comment; a plain comment cannot be resolved.
   resolvable: boolean;
   resolved: boolean;
   path?: string;
@@ -40,7 +39,6 @@ export interface Thread {
 export interface FailedJob {
   id: string;
   name: string;
-  // The branch the pipeline ran on, or the pull request it ran for.
   branch?: string;
   pullRequest?: number;
   sha: string;
@@ -60,8 +58,13 @@ export interface JobTiming {
   seconds: number;
 }
 
+export type ConflictStatus = "conflicting" | "mergeable" | "computing";
+
 export interface ForgeClient {
   kind: Forge;
+  // How the forge writes a review's number, `!12` or `#12`, and the short name of its reviews.
+  reviewPrefix: "!" | "#";
+  reviewKind: "mr" | "pr";
   host: string;
   // owner/name on GitHub, group/.../name on GitLab.
   project: string;
@@ -69,12 +72,10 @@ export interface ForgeClient {
   currentUser(): Promise<string>;
   defaultBranch(): Promise<string>;
   openPullRequests(): Promise<PullRequest[]>;
-  // Undefined while the forge is still computing it.
-  hasConflicts(pullRequest: PullRequest): Promise<boolean | undefined>;
+  conflictStatus(pullRequest: PullRequest): Promise<ConflictStatus>;
   threads(pullRequest: PullRequest): Promise<Thread[]>;
   failedJobs(since: Date): Promise<FailedJob[]>;
   jobLog(job: FailedJob): Promise<string>;
-  // The latest successful pipelines on the branch, newest first.
   successfulPipelines(branch: string, count: number): Promise<Pipeline[]>;
   pipelineJobs(pipeline: Pipeline): Promise<JobTiming[]>;
 }

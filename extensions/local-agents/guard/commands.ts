@@ -1,5 +1,5 @@
-import { homedir } from "node:os";
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
+import { expandHome, isInside } from "../paths.ts";
 
 // Decides whether a local agent may run a bash command. Every command in a list or pipeline must match one of the
 // allowed patterns, where `*` matches one word and a trailing `**` matches the rest of the command. Shell features
@@ -15,7 +15,6 @@ export type CommandVerdict =
 
 interface Word {
   text: string;
-  // An unquoted `>`, `<`, or `&` inside the word, so it is a redirection rather than an argument.
   isRedirection: boolean;
 }
 
@@ -99,6 +98,17 @@ export const FORGE_READ_COMMANDS = [
   "gh api **",
 ];
 
+// `gh api` and `glab api` send a GET unless one of these is given.
+const API_WRITE_OPTIONS = [
+  "-X",
+  "--method",
+  "-f",
+  "-F",
+  "--field",
+  "--raw-field",
+  "--input",
+];
+
 // Options that make an otherwise read-only or local command run another program, write a file, or call a write API.
 const FORBIDDEN_OPTIONS: Record<string, string[]> = {
   find: [
@@ -121,16 +131,8 @@ const FORBIDDEN_OPTIONS: Record<string, string[]> = {
   "git grep": ["-O", "--open-files-in-pager"],
   "git fetch": ["--upload-pack"],
   "git rebase": ["-x", "--exec"],
-  "gh api": ["-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"],
-  "glab api": [
-    "-X",
-    "--method",
-    "-f",
-    "-F",
-    "--field",
-    "--raw-field",
-    "--input",
-  ],
+  "gh api": API_WRITE_OPTIONS,
+  "glab api": API_WRITE_OPTIONS,
 };
 
 const ALLOWED_VARIABLES = new Set([
@@ -301,28 +303,11 @@ function splitCommands(tokens: Token[]): Word[][] {
   return commands.filter((words) => words.length > 0);
 }
 
-export function expandHome(path: string): string {
-  if (path === "~" || path.startsWith("~/")) {
-    return homedir() + path.slice(1);
-  }
-
-  return path;
-}
-
 function looksLikePath(text: string): boolean {
   return (
     text.startsWith("/") ||
     text.startsWith("~") ||
     text.split("/").includes("..")
-  );
-}
-
-export function isInside(root: string, path: string): boolean {
-  const offset = relative(root, path);
-
-  return (
-    offset === "" ||
-    (!offset.startsWith("..") && !isAbsolute(offset) && offset !== "..")
   );
 }
 
@@ -370,6 +355,11 @@ function matchesPattern(pattern: string, words: string[]): boolean {
   return parts.length === words.length;
 }
 
+// A single-letter option such as `-O`, which can take its value without a space: `-Ovim`.
+function isShortOption(option: string): boolean {
+  return /^-[A-Za-z]$/.test(option);
+}
+
 function forbiddenOption(words: string[]): string | undefined {
   const keys = [words[0], `${words[0]} ${words[1] ?? ""}`];
   const options = keys.flatMap((key) => FORBIDDEN_OPTIONS[key] ?? []);
@@ -379,22 +369,22 @@ function forbiddenOption(words: string[]): string | undefined {
       (option) =>
         word === option ||
         word.startsWith(`${option}=`) ||
-        (option.length === 2 &&
-          !option.startsWith("--") &&
-          word.startsWith(option)),
+        (isShortOption(option) && word.startsWith(option)),
     ),
   );
 }
 
-// Drops the leading variable assignments and the redirections that only discard output, or says why it cannot.
-function commandWords(words: Word[]): string[] | string {
+type ParsedCommand = { words: string[] } | { reason: string };
+
+// Drops the leading variable assignments and the redirections that only discard output.
+function parseCommand(words: Word[]): ParsedCommand {
   const remaining = [...words];
 
   while (remaining[0] && /^[A-Za-z_][A-Za-z0-9_]*=/.test(remaining[0].text)) {
     const name = remaining[0].text.slice(0, remaining[0].text.indexOf("="));
 
     if (!ALLOWED_VARIABLES.has(name)) {
-      return `setting ${name} is not allowed`;
+      return { reason: `setting ${name} is not allowed` };
     }
 
     remaining.shift();
@@ -422,10 +412,13 @@ function commandWords(words: Word[]): string[] | string {
       continue;
     }
 
-    return "redirections other than discarding output to /dev/null are not allowed";
+    return {
+      reason:
+        "redirections other than discarding output to /dev/null are not allowed",
+    };
   }
 
-  return kept;
+  return { words: kept };
 }
 
 export function checkCommand(
@@ -443,11 +436,14 @@ export function checkCommand(
   let directory = cwd;
 
   for (const segment of splitCommands(tokens)) {
-    const words = commandWords(segment);
+    const parsed = parseCommand(segment);
 
-    if (typeof words === "string") {
-      return refuse(words);
+    if ("reason" in parsed) {
+      return refuse(parsed.reason);
     }
+
+    const { words } = parsed;
+    const [program, cdTarget, ...cdExtra] = words;
 
     const outside = pathOutside(root, directory, words);
 
@@ -455,15 +451,15 @@ export function checkCommand(
       return refuse(`${outside} is outside the worktree ${root}`);
     }
 
-    if (words[0] === "cd" && words.length === 2) {
-      directory = resolve(directory, expandHome(words[1]));
+    if (program === "cd" && cdTarget !== undefined && cdExtra.length === 0) {
+      directory = resolve(directory, expandHome(cdTarget));
       continue;
     }
 
     const option = forbiddenOption(words);
 
     if (option) {
-      return refuse(`\`${words[0]}\` with ${option} is not allowed`);
+      return refuse(`\`${program}\` with ${option} is not allowed`);
     }
 
     if (!allow.some((pattern) => matchesPattern(pattern, words))) {

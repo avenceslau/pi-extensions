@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 const SLUG_CHARACTERS = 50;
 const HASH_CHARACTERS = 10;
 
-// Lowercase words joined by dashes, for branch names.
 export function slug(text: string): string {
   return text
     .toLowerCase()

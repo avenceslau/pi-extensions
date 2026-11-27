@@ -6,11 +6,10 @@ export interface RunOptions {
   timeoutMs?: number;
 }
 
-// Maps the items with at most `limit` calls in flight, keeping the input order.
 export async function mapWithLimit<T, R>(
   items: T[],
   limit: number,
-  map: (item: T) => Promise<R>,
+  mapItem: (item: T) => Promise<R>,
 ): Promise<R[]> {
   const results: R[] = [];
   let next = 0;
@@ -20,7 +19,7 @@ export async function mapWithLimit<T, R>(
       const index = next;
 
       next += 1;
-      results[index] = await map(items[index]);
+      results[index] = await mapItem(items[index]);
     }
   };
 
@@ -33,8 +32,10 @@ export async function mapWithLimit<T, R>(
 
 export const API_CONCURRENCY = 8;
 
-// Runs a program without a shell and resolves to its trimmed stdout; rejects with stderr when it exits non-zero.
-export function run(
+const DEFAULT_TIMEOUT_MS = 300_000;
+
+// Resolves to the trimmed stdout; rejects with stderr when the program exits non-zero.
+export function runProgram(
   command: string,
   args: string[],
   options: RunOptions = {},
@@ -46,7 +47,7 @@ export function run(
       {
         cwd: options.cwd,
         maxBuffer: 256 * 1024 * 1024,
-        timeout: options.timeoutMs ?? 300_000,
+        timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       },
       (error, stdout, stderr) => {
         if (error) {

@@ -12,6 +12,8 @@ import type { LocalAgentDefinition } from "./definition.ts";
 import { install, uninstall } from "./launchd.ts";
 import { tick } from "./tick.ts";
 
+const USAGE_ERROR_EXIT_CODE = 2;
+
 const AGENTS: Record<string, () => Promise<LocalAgentDefinition>> = {
   todai: async () => (await import("./todai/index.ts")).default,
 };
@@ -37,7 +39,7 @@ if (!command || !loadDefinition) {
   console.error(
     `usage: cli.ts tick|install|uninstall <${Object.keys(AGENTS).join("|")}> [--config file]... [--dry-run] [--check name]...`,
   );
-  process.exit(2);
+  process.exit(USAGE_ERROR_EXIT_CODE);
 }
 
 const configPaths = flagValues(rest, "--config").map((path) => resolve(path));
@@ -63,5 +65,5 @@ if (command === "tick") {
   console.log(`Uninstalled ${agent}`);
 } else {
   console.error(`unknown command ${command}`);
-  process.exit(2);
+  process.exit(USAGE_ERROR_EXIT_CODE);
 }

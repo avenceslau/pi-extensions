@@ -1,4 +1,5 @@
-import { API_CONCURRENCY, mapWithLimit, run } from "../exec.ts";
+import { API_CONCURRENCY, mapWithLimit, runProgram } from "../exec.ts";
+import { listAllPages } from "./pagination.ts";
 import type {
   FailedJob,
   ForgeClient,
@@ -80,10 +81,8 @@ interface GraphQLThreads {
   };
 }
 
-const PAGE_SIZE = 100;
-const MAX_PAGES = 50;
-// Failed runs examined per tick; the cursor then keeps only jobs that completed after it.
 const FAILED_RUNS_EXAMINED = 50;
+const MILLISECONDS_PER_SECOND = 1000;
 
 const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -108,30 +107,13 @@ export function githubClient(
   isBot: (username: string) => boolean,
 ): ForgeClient {
   const [owner, name] = project.split("/");
-  const api = (path: string) => run("gh", ["api", "--hostname", host, path]);
+
+  const api = (path: string) =>
+    runProgram("gh", ["api", "--hostname", host, path]);
 
   // SAFETY: each caller names the response type its endpoint documents.
   const json = async <T>(path: string): Promise<T> =>
     JSON.parse(await api(path)) as T;
-
-  // Every page, so a review missing from the result is really not open.
-  const listAll = async <T>(path: string): Promise<T[]> => {
-    const items: T[] = [];
-
-    for (let page = 1; page <= MAX_PAGES; page += 1) {
-      const batch = await json<T[]>(
-        `${path}&per_page=${PAGE_SIZE}&page=${page}`,
-      );
-
-      items.push(...batch);
-
-      if (batch.length < PAGE_SIZE) {
-        return items;
-      }
-    }
-
-    throw new Error(`${path} has more than ${MAX_PAGES} pages`);
-  };
 
   let pulls: Promise<GitHubPullRequest[]> | undefined;
   let user: Promise<string> | undefined;
@@ -155,6 +137,8 @@ export function githubClient(
 
   return {
     kind: "github",
+    reviewPrefix: "#",
+    reviewKind: "pr",
     host,
     project,
     url: `https://${host}/${project}`,
@@ -171,7 +155,9 @@ export function githubClient(
     },
 
     async openPullRequests(): Promise<PullRequest[]> {
-      pulls ??= listAll<GitHubPullRequest>(`repos/${project}/pulls?state=open`);
+      pulls ??= listAllPages(`repos/${project}/pulls?state=open`, (pagePath) =>
+        json<GitHubPullRequest[]>(pagePath),
+      );
 
       return (await pulls).map((pull) => ({
         number: pull.number,
@@ -189,22 +175,22 @@ export function githubClient(
       }));
     },
 
-    async hasConflicts(pullRequest) {
+    async conflictStatus(pullRequest) {
       const pull = await json<GitHubPullRequest>(
         `repos/${project}/pulls/${pullRequest.number}`,
       );
 
       if (!pull.mergeable_state || pull.mergeable_state === "unknown") {
-        return undefined;
+        return "computing";
       }
 
-      return pull.mergeable_state === "dirty";
+      return pull.mergeable_state === "dirty" ? "conflicting" : "mergeable";
     },
 
     async threads(pullRequest): Promise<Thread[]> {
       // SAFETY: THREADS_QUERY selects exactly the fields of GraphQLThreads.
       const response = JSON.parse(
-        await run("gh", [
+        await runProgram("gh", [
           "api",
           "graphql",
           "--hostname",
@@ -252,6 +238,7 @@ export function githubClient(
       const recent = runs.filter(
         (workflowRun) => new Date(workflowRun.updated_at) > since,
       );
+
       const jobs = await mapWithLimit(
         recent,
         API_CONCURRENCY,
@@ -292,7 +279,7 @@ export function githubClient(
         seconds:
           (Date.parse(workflowRun.updated_at) -
             Date.parse(workflowRun.run_started_at)) /
-          1000,
+          MILLISECONDS_PER_SECOND,
       }));
     },
 
@@ -300,7 +287,8 @@ export function githubClient(
       return (await runJobs(Number(pipeline.id))).map((job) => ({
         name: `${job.workflow_name} / ${job.name}`,
         seconds: job.completed_at
-          ? (Date.parse(job.completed_at) - Date.parse(job.started_at)) / 1000
+          ? (Date.parse(job.completed_at) - Date.parse(job.started_at)) /
+            MILLISECONDS_PER_SECOND
           : 0,
       }));
     },

@@ -2,6 +2,7 @@ import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
+import { shellQuote } from "../shared/shell.ts";
 import {
   isToolCallEventType,
   type ExtensionAPI,
@@ -152,10 +153,6 @@ async function isBlockedPath(
     (await isProtectedPath(path, cwd)) &&
     !(await isAllowedPath(path, cwd, allow))
   );
-}
-
-export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 export default function (pi: ExtensionAPI) {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { shellQuote } from "../shared/shell.ts";
 
 import type {
   ExtensionAPI,
@@ -103,10 +104,6 @@ export function mutatesGitState(command: string): boolean {
 
 export function mutatesFilesOrGit(command: string): boolean {
   return FILE_OR_GIT_MUTATION.test(stripQuotedText(command));
-}
-
-export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function shellUnquote(value: string): string {

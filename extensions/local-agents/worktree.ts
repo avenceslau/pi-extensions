@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import type { Repository, Trigger } from "./definition.ts";
-import { run } from "./exec.ts";
+import { runProgram } from "./exec.ts";
 
 export interface PreparedWorktree {
   path: string;
   gitDirectory: string;
-  // Set when the worktree had uncommitted changes, so it was left where it was instead of moved to the start.
-  dirty: boolean;
+  // The worktree had uncommitted changes, so it was left where it was instead of moved to the start.
+  keptUncommittedChanges: boolean;
 }
 
 // Creates the trigger's branch worktree with Shirei, or reuses it. A clean reused worktree is moved to the trigger's
@@ -15,15 +15,19 @@ export async function prepareWorktree(
   repository: Repository,
   worktree: Trigger["worktree"],
 ): Promise<PreparedWorktree> {
-  await run("git", ["fetch", "origin", ...worktree.fetch], {
+  await runProgram("git", ["fetch", "origin", ...worktree.fetch], {
     cwd: repository.path,
   });
 
-  const start = await run("git", ["rev-parse", `${worktree.start}^{commit}`], {
-    cwd: repository.path,
-  });
+  const start = await runProgram(
+    "git",
+    ["rev-parse", `${worktree.start}^{commit}`],
+    {
+      cwd: repository.path,
+    },
+  );
 
-  const output = await run(
+  const output = await runProgram(
     "shirei",
     [
       "branch",
@@ -37,28 +41,37 @@ export async function prepareWorktree(
     { cwd: repository.path },
   );
 
-  const path = output.split("\n").at(-1)!.trim();
-  const status = await run("git", ["status", "--porcelain"], { cwd: path });
+  const path = output.split("\n").at(-1)?.trim();
+
+  if (!path) {
+    throw new Error(
+      `shirei branch ${worktree.branch} printed no worktree path`,
+    );
+  }
+
+  const status = await runProgram("git", ["status", "--porcelain"], {
+    cwd: path,
+  });
 
   const gitDirectory = resolve(
     path,
-    await run("git", ["rev-parse", "--git-common-dir"], { cwd: path }),
+    await runProgram("git", ["rev-parse", "--git-common-dir"], { cwd: path }),
   );
 
   if (status !== "") {
     return {
       path,
       gitDirectory,
-      dirty: true,
+      keptUncommittedChanges: true,
     };
   }
 
-  await run("git", ["reset", "--hard", start], { cwd: path });
+  await runProgram("git", ["reset", "--hard", start], { cwd: path });
 
   return {
     path,
     gitDirectory,
-    dirty: false,
+    keptUncommittedChanges: false,
   };
 }
 
@@ -69,13 +82,15 @@ export async function removeWorktree(
   branch: string,
 ): Promise<boolean> {
   try {
-    await run("git", ["worktree", "remove", path], { cwd: repository.path });
+    await runProgram("git", ["worktree", "remove", path], {
+      cwd: repository.path,
+    });
   } catch {
     return false;
   }
 
-  await run("git", ["branch", "-D", branch], { cwd: repository.path });
-  await run("shirei", ["worktrees", "prune", "--missing"]);
+  await runProgram("git", ["branch", "-D", branch], { cwd: repository.path });
+  await runProgram("shirei", ["worktrees", "prune", "--missing"]);
 
   return true;
 }

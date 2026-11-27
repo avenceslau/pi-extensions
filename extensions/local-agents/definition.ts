@@ -1,10 +1,6 @@
 import type { PiExtensionsConfig } from "../shared/config-types.ts";
 import type { ForgeClient } from "./forges/types.ts";
 
-// A local agent is a set of checks, plain code run on a schedule by launchd, and the playbooks they start. A check
-// returns triggers; each trigger starts a fresh pi session in a Rex tab of the agent's session, in a worktree, limited
-// to what its playbook allows.
-
 export interface Repository {
   url: string;
   // The local clone, with `~` expanded.
@@ -19,6 +15,8 @@ export interface CheckContext {
   repositories: Repository[];
   config: PiExtensionsConfig;
   now: Date;
+  // No run of this check has finished before; see Check.actOnFirstRun.
+  firstRun: boolean;
   // The check's own data from earlier runs; changes are saved when the run finishes without throwing.
   memory: Record<string, unknown>;
   log(message: string): void;

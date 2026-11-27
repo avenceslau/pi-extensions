@@ -8,16 +8,17 @@ import type {
   Repository,
   Trigger,
 } from "./definition.ts";
-import { expandHome } from "./command-policy.ts";
-import { POLICY_VARIABLE, type RunPolicy } from "./run-policy.ts";
+import { POLICY_VARIABLE, type RunPolicy } from "./guard/policy.ts";
+import { expandHome } from "./paths.ts";
 import { agentDirectory } from "./state.ts";
 import type { PreparedWorktree } from "./worktree.ts";
 
 const EXTENSIONS_DIRECTORY = dirname(dirname(fileURLToPath(import.meta.url)));
 
-// Extensions from this package every run loads: the guard, Rex status reporting, and retries with model failover.
+const RUN_ID_SUFFIX_CHARACTERS = 8;
+
 const PACKAGE_EXTENSIONS = [
-  "local-agents/guard.ts",
+  "local-agents/guard/index.ts",
   "rex/index.ts",
   "auto-retry/index.ts",
 ];
@@ -29,9 +30,6 @@ export interface Launch {
   command: string[];
 }
 
-// Writes the run's policy and prompt and returns the command that starts its pi session. The session loads no
-// extension, skill, prompt template, MCP server, or context file beyond what is listed here, so the tools it has are
-// exactly the playbook's.
 export async function prepareLaunch(
   definition: LocalAgentDefinition,
   config: LocalAgentConfig,
@@ -47,7 +45,7 @@ export async function prepareLaunch(
   }
 
   // Launches in one tick share `now`, so the random suffix keeps their policy, prompt, and status files apart.
-  const runId = `${now.toISOString().replace(/[:.]/g, "-")}-${trigger.playbook}-${randomUUID().slice(0, 8)}`;
+  const runId = `${now.toISOString().replace(/[:.]/g, "-")}-${trigger.playbook}-${randomUUID().slice(0, RUN_ID_SUFFIX_CHARACTERS)}`;
   const runsDirectory = join(agentDirectory(definition.name), "runs");
   const policyPath = join(runsDirectory, `${runId}.policy.json`);
   const promptPath = join(runsDirectory, `${runId}.prompt.md`);
@@ -67,7 +65,7 @@ export async function prepareLaunch(
     gitDirectory: worktree.gitDirectory,
     statusFile: join(runsDirectory, `${runId}.status.json`),
     tools,
-    commands: playbook.commands(repository),
+    bashCommandPatterns: playbook.commands(repository),
     repository: {
       forge: repository.forge.kind,
       host: repository.forge.host,
@@ -82,7 +80,7 @@ export async function prepareLaunch(
     comment: playbook.comment,
   };
 
-  const dirtyNote = worktree.dirty
+  const dirtyNote = worktree.keptUncommittedChanges
     ? "\n\nThe worktree has uncommitted changes from an earlier run, so it was not moved to the commit above. Check `git status` and ask the user before discarding anything.\n"
     : "";
 
