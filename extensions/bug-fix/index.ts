@@ -62,7 +62,7 @@ export default function (pi: ExtensionAPI) {
   // Concurrent calls in one session would each see no bugs session and create two.
   let rexQueue: Promise<unknown> = Promise.resolve();
 
-  async function rex<Schema extends TSchema>(
+  async function runRexJson<Schema extends TSchema>(
     args: string[],
     schema: Schema,
     what: string,
@@ -96,7 +96,7 @@ export default function (pi: ExtensionAPI) {
     command: string[],
   ): Promise<BugFixWindow> {
     const launchArgs = ["--cwd", cwd, "--json", "--", ...command];
-    const sessionList = await rex(
+    const sessionList = await runRexJson(
       ["ls", "--json"],
       RexSessionListSchema,
       "list sessions",
@@ -106,7 +106,7 @@ export default function (pi: ExtensionAPI) {
     )?.session_id;
 
     if (sessionId) {
-      const window = await rex(
+      const window = await runRexJson(
         [
           "window",
           "new",
@@ -127,7 +127,7 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    const created = await rex(
+    const created = await runRexJson(
       ["new", REX_SESSION_LABEL, "--window", label, ...launchArgs],
       RexCreatedSessionSchema,
       `create the ${REX_SESSION_LABEL} session`,
