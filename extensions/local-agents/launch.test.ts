@@ -14,6 +14,7 @@ import { prepareLaunch } from "./launch.ts";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "launch-"));
 
+// SAFETY: prepareLaunch reads only these fields of the forge client.
 const forge = {
   kind: "github",
   host: "github.com",

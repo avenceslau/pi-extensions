@@ -197,8 +197,10 @@ export const commentsCheck: Check = {
   everyMinutes: 5,
   async run(context) {
     const triggers: Trigger[] = [];
+    // SAFETY: only this check writes its memory, and only with this shape.
     const seenByTab = (context.memory.seen ??= {}) as Record<string, string[]>;
 
+    // SAFETY: only this check writes its memory, and only with this shape.
     const updatedByTab = (context.memory.updatedAt ??= {}) as Record<
       string,
       string
@@ -322,6 +324,7 @@ export const hygieneCheck: Check = {
   async run(context) {
     const triggers: Trigger[] = [];
 
+    // SAFETY: only this check writes its memory, and only with this shape.
     const lintedByTab = (context.memory.linted ??= {}) as Record<
       string,
       string

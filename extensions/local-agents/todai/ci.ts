@@ -263,6 +263,7 @@ export const ciFailuresCheck: Check = {
   name: "ci-failures",
   everyMinutes: 5,
   async run(context) {
+    // SAFETY: only this check writes its memory, and only with this shape.
     const memory = context.memory as FailureMemory;
     const triggers: Trigger[] = [];
 
@@ -507,6 +508,7 @@ export const ciSpeedCheck: Check = {
     to: 19,
   },
   async run(context) {
+    // SAFETY: only this check writes its memory, and only with this shape.
     const memory = context.memory as SpeedMemory;
 
     // Each hour starts with a different repository, so one with many slow jobs cannot starve the others.

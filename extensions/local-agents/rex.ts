@@ -6,6 +6,7 @@ interface RexWindow {
 }
 
 async function sessionLabels(): Promise<string[]> {
+  // SAFETY: the shape `rex ls --json` prints.
   const { sessions } = JSON.parse(
     await runProgram("rex", ["ls", "--json"]),
   ) as {
@@ -38,6 +39,7 @@ export async function ensureSession(
 }
 
 export async function windowIds(session: string): Promise<Set<string>> {
+  // SAFETY: the shape `rex window ls --json` prints.
   const { windows } = JSON.parse(
     await runProgram("rex", ["window", "ls", "-s", session, "--json"]),
   ) as { windows: RexWindow[] };
@@ -51,6 +53,7 @@ export async function openTab(
   cwd: string,
   command: string[],
 ): Promise<string> {
+  // SAFETY: the shape `rex window new --json` prints.
   const created = JSON.parse(
     await runProgram("rex", [
       "window",
