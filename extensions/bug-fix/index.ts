@@ -4,23 +4,31 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static, type TSchema } from "typebox";
+import { Value } from "typebox/value";
 import { loadConfig } from "../shared/config.ts";
 
 const REX_SESSION_LABEL = "bugs";
-const WINDOW_LABEL_MAX_LENGTH = 40;
+const WINDOW_LABEL_MAX_CHARACTERS = 40;
 const REX_TIMEOUT_MS = 10_000;
 
-type RexSessionList = {
-  sessions?: { session_id?: string; label?: string }[];
-};
+const RexSessionListSchema = Type.Object({
+  sessions: Type.Array(
+    Type.Object({
+      session_id: Type.String(),
+      label: Type.Optional(Type.String()),
+    }),
+  ),
+});
 
-type RexWindow = { window_id?: string };
+const RexWindowSchema = Type.Object({
+  window_id: Type.String(),
+});
 
-type RexCreatedSession = {
-  session_id?: string;
-  initial_windows?: RexWindow[];
-};
+const RexCreatedSessionSchema = Type.Object({
+  session_id: Type.String(),
+  initial_windows: Type.Array(RexWindowSchema, { minItems: 1 }),
+});
 
 type BugFixWindow = {
   sessionId: string;
@@ -50,36 +58,36 @@ function bugFixPrompt(
   return lines.join("\n");
 }
 
-function parseJson<T>(output: string, what: string): T {
-  try {
-    return JSON.parse(output) as T;
-  } catch {
-    throw new Error(`Rex returned invalid JSON for ${what}`);
-  }
-}
-
 export default function (pi: ExtensionAPI) {
   // Concurrent calls in one session would each see no bugs session and create two.
   let rexQueue: Promise<unknown> = Promise.resolve();
 
-  async function rex(args: string[], what: string): Promise<string> {
-    const result = await pi.exec("rex", args, { timeout: REX_TIMEOUT_MS });
+  async function rex<Schema extends TSchema>(
+    args: string[],
+    schema: Schema,
+    what: string,
+  ): Promise<Static<Schema>> {
+    const completed = await pi.exec("rex", args, { timeout: REX_TIMEOUT_MS });
 
-    if (result.code !== 0) {
-      throw new Error(result.stderr.trim() || `Could not ${what} in Rex`);
+    if (completed.code !== 0) {
+      throw new Error(completed.stderr.trim() || `Could not ${what} in Rex`);
     }
 
-    return result.stdout;
-  }
+    let output: unknown;
 
-  async function findBugsSession(): Promise<string | undefined> {
-    const list = parseJson<RexSessionList>(
-      await rex(["ls", "--json"], "list sessions"),
-      "the session list",
-    );
+    try {
+      output = JSON.parse(completed.stdout);
+    } catch {
+      throw new Error(`Rex returned invalid JSON when asked to ${what}`);
+    }
 
-    return list.sessions?.find((session) => session.label === REX_SESSION_LABEL)
-      ?.session_id;
+    if (!Value.Check(schema, output)) {
+      throw new Error(
+        `Rex returned an unexpected response when asked to ${what}`,
+      );
+    }
+
+    return output;
   }
 
   async function openBugFixWindow(
@@ -87,32 +95,30 @@ export default function (pi: ExtensionAPI) {
     cwd: string,
     command: string[],
   ): Promise<BugFixWindow> {
-    const sessionId = await findBugsSession();
+    const launchArgs = ["--cwd", cwd, "--json", "--", ...command];
+    const sessionList = await rex(
+      ["ls", "--json"],
+      RexSessionListSchema,
+      "list sessions",
+    );
+    const sessionId = sessionList.sessions.find(
+      (session) => session.label === REX_SESSION_LABEL,
+    )?.session_id;
 
     if (sessionId) {
-      const window = parseJson<RexWindow>(
-        await rex(
-          [
-            "window",
-            "new",
-            "--session",
-            sessionId,
-            label,
-            "--focus=false",
-            "--cwd",
-            cwd,
-            "--json",
-            "--",
-            ...command,
-          ],
-          "create the bug-fix tab",
-        ),
-        "the new tab",
+      const window = await rex(
+        [
+          "window",
+          "new",
+          "--session",
+          sessionId,
+          label,
+          "--focus=false",
+          ...launchArgs,
+        ],
+        RexWindowSchema,
+        "create the bug-fix tab",
       );
-
-      if (!window.window_id) {
-        throw new Error("Rex did not return the new bug-fix tab");
-      }
 
       return {
         sessionId,
@@ -121,34 +127,15 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    const created = parseJson<RexCreatedSession>(
-      await rex(
-        [
-          "new",
-          REX_SESSION_LABEL,
-          "--window",
-          label,
-          "--cwd",
-          cwd,
-          "--json",
-          "--",
-          ...command,
-        ],
-        `create the ${REX_SESSION_LABEL} session`,
-      ),
-      "the new session",
+    const created = await rex(
+      ["new", REX_SESSION_LABEL, "--window", label, ...launchArgs],
+      RexCreatedSessionSchema,
+      `create the ${REX_SESSION_LABEL} session`,
     );
-    const windowId = created.initial_windows?.[0]?.window_id;
-
-    if (!created.session_id || !windowId) {
-      throw new Error(
-        `Rex did not return the new ${REX_SESSION_LABEL} session`,
-      );
-    }
 
     return {
       sessionId: created.session_id,
-      windowId,
+      windowId: created.initial_windows[0].window_id,
       createdSession: true,
     };
   }
@@ -162,9 +149,13 @@ export default function (pi: ExtensionAPI) {
     }
 
     const cwd = resolve(context.cwd, requested.replace(/^@/, ""));
-    const info = await stat(cwd).catch(() => undefined);
+    const cwdStats = await stat(cwd).catch((error: Error) => {
+      throw new Error(
+        `Cannot use ${cwd} as the bug's repository: ${error.message}`,
+      );
+    });
 
-    if (!info?.isDirectory()) {
+    if (!cwdStats.isDirectory()) {
       throw new Error(`${cwd} is not a directory`);
     }
 
@@ -225,8 +216,13 @@ export default function (pi: ExtensionAPI) {
       ];
 
       const opened = rexQueue.then(() =>
-        openBugFixWindow(title.slice(0, WINDOW_LABEL_MAX_LENGTH), cwd, command),
+        openBugFixWindow(
+          title.slice(0, WINDOW_LABEL_MAX_CHARACTERS),
+          cwd,
+          command,
+        ),
       );
+      // The caller gets the failure from `opened`; the queue only needs to stay usable.
       rexQueue = opened.catch(() => undefined);
       const window = await opened;
 

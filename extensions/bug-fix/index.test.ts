@@ -47,27 +47,34 @@ function setup(existingSessions: { session_id: string; label: string }[]) {
   } as unknown as ExtensionAPI;
   bugFix(pi);
 
+  if (!tool) {
+    throw new Error("start_bug_fix was not registered");
+  }
+
+  const registeredTool = tool;
   const context = {
     cwd: "/repo",
     model: { provider: "provider", id: "model" },
     sessionManager: { getSessionFile: () => "/sessions/reporter.jsonl" },
     ui: { notify: () => undefined },
   };
-  const run = (params: Record<string, string>) =>
-    tool!.execute("call", params, undefined, undefined, context);
+  const startBugFix = (params: Record<string, string>) =>
+    registeredTool.execute("call", params, undefined, undefined, context);
 
-  return { calls, run };
+  return { calls, startBugFix };
 }
 
 test("creates the bugs session when it does not exist", async () => {
-  const { calls, run } = setup([{ session_id: "session:main", label: "main" }]);
+  const { calls, startBugFix } = setup([
+    { session_id: "session:main", label: "main" },
+  ]);
 
-  const result = await run({
+  const started = await startBugFix({
     title: "Parser drops   trailing newline",
     description: "parse() in src/parse.ts loses the final line.",
   });
 
-  assert.deepEqual(result.details, {
+  assert.deepEqual(started.details, {
     sessionId: "session:new",
     windowId: "window:first",
     createdSession: true,
@@ -104,11 +111,16 @@ test("creates the bugs session when it does not exist", async () => {
 });
 
 test("adds a tab to the existing bugs session", async () => {
-  const { calls, run } = setup([{ session_id: "session:bugs", label: "bugs" }]);
+  const { calls, startBugFix } = setup([
+    { session_id: "session:bugs", label: "bugs" },
+  ]);
 
-  const result = await run({ title: "Flaky retry", description: "Details." });
+  const started = await startBugFix({
+    title: "Flaky retry",
+    description: "Details.",
+  });
 
-  assert.deepEqual(result.details, {
+  assert.deepEqual(started.details, {
     sessionId: "session:bugs",
     windowId: "window:added",
     createdSession: false,
