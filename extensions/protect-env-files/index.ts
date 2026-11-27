@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import { shellQuote } from "../shared/shell.ts";
+import { ENV_FILE_READ_DENY_RULES } from "./sandbox-rules.ts";
 import {
   isToolCallEventType,
   type ExtensionAPI,
@@ -10,9 +11,6 @@ import {
 
 const GREP_EXCLUDE_GLOB =
   "!{.env,.env.*,.dev.vars,.dev.vars.*,**/.env,**/.env.*,**/.dev.vars,**/.dev.vars.*}";
-
-export const ENV_FILE_READ_DENY_RULES =
-  '(deny file-read* (regex #".*/[.]env([.][^/]*)?$"))(deny file-read* (regex #".*/[.]dev[.]vars([.][^/]*)?$"))';
 
 const MACOS_SANDBOX_DENY_RULES = `(version 1)(allow default)${ENV_FILE_READ_DENY_RULES}`;
 
