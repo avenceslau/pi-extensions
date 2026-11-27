@@ -25,13 +25,16 @@ export interface TabRecord extends Tab {
 
 export interface OpenedReview {
   url: string;
-  title: string;
+  // Missing on reviews recorded before titles were. Those never get auto-merge: the user confirmed them without being
+  // told they would merge on their own.
+  title?: string;
   open: boolean;
   // reviewOpenedCommand ran for it.
   announced?: boolean;
   autoMerge?: "enabled";
-  // Ticks that failed to run reviewOpenedCommand or turn on auto-merge; both stop after a few.
-  failures?: number;
+  // Failed attempts of each follow-up; each stops after a few without holding up the other.
+  announceFailures?: number;
+  autoMergeFailures?: number;
 }
 
 export interface AgentState {
