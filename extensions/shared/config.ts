@@ -16,6 +16,8 @@ export type {
   ClefConfig,
   ConfigRequest,
   Forge,
+  LocalAgentConfig,
+  LocalAgentRepositoryConfig,
   ModelsConfig,
   PiExtensionsConfig,
 } from "./config-types.ts";
@@ -55,6 +57,23 @@ const SessionFocusConfigSchema = Type.Object({
   backend: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("rex")])),
 });
 
+const LocalAgentConfigSchema = Type.Object({
+  repositories: Type.Optional(
+    Type.Array(
+      Type.Object({
+        url: Type.String(),
+        path: Type.String(),
+        commands: Type.Optional(Type.Array(Type.String())),
+      }),
+    ),
+  ),
+  model: Type.Optional(Type.String()),
+  thinking: Type.Optional(Type.String()),
+  extensions: Type.Optional(Type.Array(Type.String())),
+  maxRunningAgents: Type.Optional(Type.Integer({ minimum: 1 })),
+  ignoredAuthors: Type.Optional(Type.Array(Type.String())),
+});
+
 const PiExtensionsConfigSchema = Type.Object({
   btw: Type.Optional(
     Type.Object({
@@ -64,6 +83,9 @@ const PiExtensionsConfigSchema = Type.Object({
     }),
   ),
   clef: Type.Optional(ClefConfigSchema),
+  localAgents: Type.Optional(
+    Type.Record(Type.String(), LocalAgentConfigSchema),
+  ),
   models: Type.Optional(ModelsConfigSchema),
   forges: Type.Optional(Type.Record(Type.String(), ForgeSchema)),
   agentRoles: Type.Optional(AgentRolesConfigSchema),
@@ -176,6 +198,22 @@ export async function refreshUserConfig(
   Reflect.set(globalThis, USER_CONFIG_KEY, await readUserConfig(path));
 }
 
+function mergeLocalAgents(
+  base: PiExtensionsConfig["localAgents"] = {},
+  override: PiExtensionsConfig["localAgents"] = {},
+): PiExtensionsConfig["localAgents"] {
+  const merged = { ...base };
+
+  for (const [name, config] of Object.entries(override)) {
+    merged[name] = {
+      ...base[name],
+      ...config,
+    };
+  }
+
+  return merged;
+}
+
 export function mergeConfig(
   base: PiExtensionsConfig,
   override: PiExtensionsConfig,
@@ -186,6 +224,7 @@ export function mergeConfig(
       ...override.btw,
     },
     clef: override.clef ?? base.clef,
+    localAgents: mergeLocalAgents(base.localAgents, override.localAgents),
     models: {
       ...base.models,
       ...override.models,

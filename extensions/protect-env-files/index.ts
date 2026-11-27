@@ -2,6 +2,7 @@ import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
+import { shellQuote } from "../shared/shell.ts";
 import {
   isToolCallEventType,
   type ExtensionAPI,
@@ -10,8 +11,10 @@ import {
 const GREP_EXCLUDE_GLOB =
   "!{.env,.env.*,.dev.vars,.dev.vars.*,**/.env,**/.env.*,**/.dev.vars,**/.dev.vars.*}";
 
-const MACOS_SANDBOX_DENY_RULES =
-  '(version 1)(allow default)(deny file-read* (regex #".*/[.]env([.][^/]*)?$"))(deny file-read* (regex #".*/[.]dev[.]vars([.][^/]*)?$"))';
+export const ENV_FILE_READ_DENY_RULES =
+  '(deny file-read* (regex #".*/[.]env([.][^/]*)?$"))(deny file-read* (regex #".*/[.]dev[.]vars([.][^/]*)?$"))';
+
+const MACOS_SANDBOX_DENY_RULES = `(version 1)(allow default)${ENV_FILE_READ_DENY_RULES}`;
 
 // Global only: a project-level allow list would let any repository unprotect its own secrets.
 const ALLOW_LIST_PATH = join(homedir(), ".pi", "agent", "env-file-guard.json");
@@ -150,10 +153,6 @@ async function isBlockedPath(
     (await isProtectedPath(path, cwd)) &&
     !(await isAllowedPath(path, cwd, allow))
   );
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 export default function (pi: ExtensionAPI) {

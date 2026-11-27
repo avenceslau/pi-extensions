@@ -57,7 +57,7 @@ function onConfigRequest(
   });
 }
 
-test("a later config overrides models, model maps and forges key by key, replaces clef, and adds agent roles", () => {
+test("a later config overrides models, model maps, forges and local agents key by key, replaces clef, and adds agent roles", () => {
   const merged = mergeConfig(
     {
       clef: { url: "https://a.example/clef" },
@@ -70,6 +70,10 @@ test("a later config overrides models, model maps and forges key by key, replace
       agentRoles: { readOnly: ["a-reader"] },
       sessionFocus: { backend: "pi" },
       btw: { backend: "herdr" },
+      localAgents: {
+        watcher: { model: "a/one", maxRunningAgents: 2 },
+        other: { thinking: "high" },
+      },
     },
     {
       clef: { url: "https://b.example/clef" },
@@ -81,6 +85,7 @@ test("a later config overrides models, model maps and forges key by key, replace
       agentRoles: { readOnly: ["b-reader"], review: ["b-reviewer"] },
       sessionFocus: { backend: "rex" },
       btw: { backend: "rex" },
+      localAgents: { watcher: { model: "b/one" } },
     },
   );
 
@@ -95,6 +100,10 @@ test("a later config overrides models, model maps and forges key by key, replace
     agentRoles: { readOnly: ["a-reader", "b-reader"], review: ["b-reviewer"] },
     sessionFocus: { backend: "rex" },
     btw: { backend: "rex" },
+    localAgents: {
+      watcher: { model: "b/one", maxRunningAgents: 2 },
+      other: { thinking: "high" },
+    },
   });
 });
 

@@ -28,9 +28,7 @@ export async function git(
   return options.untrimmed ? stdout : stdout.trim();
 }
 
-export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
+export { shellQuote } from "../shared/shell.ts";
 
 export function countLines(numstat: string): number {
   let lines = 0;
