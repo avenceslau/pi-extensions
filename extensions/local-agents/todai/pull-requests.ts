@@ -51,7 +51,10 @@ function describe(pull: PullRequest): string {
 function pullRequestTrigger(
   repository: Repository,
   pull: PullRequest,
-  fields: Pick<Trigger, "key" | "playbook" | "prompt" | "push" | "notify">,
+  fields: Pick<
+    Trigger,
+    "key" | "concern" | "playbook" | "prompt" | "push" | "notify"
+  >,
 ): Trigger {
   return {
     ...fields,
@@ -76,6 +79,7 @@ async function ownPullRequests(repository: Repository): Promise<PullRequest[]> {
 function rebaseTrigger(repository: Repository, pull: PullRequest): Trigger {
   return pullRequestTrigger(repository, pull, {
     key: `rebase:${repository.url}:${pull.number}:${pull.headSha}`,
+    concern: `conflicts:${pullRequestTab(repository, pull).key}`,
     playbook: "rebase",
     push: {
       branch: pull.sourceBranch,
@@ -93,6 +97,7 @@ export const conflictsCheck: Check = {
   everyMinutes: 5,
   async run(context) {
     const triggers: Trigger[] = [];
+    const openConcerns: string[] = [];
 
     for (const repository of context.repositories) {
       const pulls = (await ownPullRequests(repository)).filter(
@@ -103,14 +108,24 @@ export const conflictsCheck: Check = {
         repository.forge.conflictStatus(pull),
       );
 
-      triggers.push(
-        ...pulls
-          .filter((_pull, index) => statuses[index] === "conflicting")
-          .map((pull) => rebaseTrigger(repository, pull)),
-      );
+      for (const [index, pull] of pulls.entries()) {
+        // A status the forge is still computing is not proof the conflicts are gone.
+        if (statuses[index] !== "mergeable") {
+          openConcerns.push(
+            `conflicts:${pullRequestTab(repository, pull).key}`,
+          );
+        }
+
+        if (statuses[index] === "conflicting") {
+          triggers.push(rebaseTrigger(repository, pull));
+        }
+      }
     }
 
-    return triggers;
+    return {
+      triggers,
+      openConcerns,
+    };
   },
 };
 
@@ -134,6 +149,31 @@ function needsAttention(
     !seen.has(last.id) &&
     now.getTime() - Date.parse(last.createdAt) < PLAIN_COMMENT_MAX_AGE_MS
   );
+}
+
+// A reviewer is still waiting: an unresolved review thread where someone else spoke last, or a plain comment by
+// someone else newer than the user's latest note.
+export function awaitsReply(threads: Thread[], username: string): boolean {
+  const notes = threads.flatMap((thread) => thread.notes);
+
+  const lastOwnNote = Math.max(
+    0,
+    ...notes.flatMap((note) =>
+      note.author === username ? [Date.parse(note.createdAt)] : [],
+    ),
+  );
+
+  return threads.some((thread) => {
+    const last = thread.notes.at(-1);
+
+    if (!last || last.author === username || last.authorIsBot) {
+      return false;
+    }
+
+    return thread.resolvable
+      ? !thread.resolved
+      : Date.parse(last.createdAt) > lastOwnNote;
+  });
 }
 
 function formatThread(thread: Thread, seen: Set<string>): string {
@@ -165,6 +205,7 @@ function commentsTrigger(
 
   return pullRequestTrigger(repository, pull, {
     key: `comments:${tab.key}:${shortHash(freshIds.sort().join(","))}`,
+    concern: `comments:${tab.key}`,
     playbook: "comments",
     notify: `${tab.label}: ${fresh.length} comment thread(s) need you`,
     push: {
@@ -176,6 +217,15 @@ function commentsTrigger(
 
 ${attention.map((thread) => formatThread(thread, seen)).join("\n\n")}`,
   });
+}
+
+// A record of the check's memory by tab key, created on first use.
+function memoryRecord<T>(
+  memory: Record<string, unknown>,
+  name: string,
+): Record<string, T> {
+  // SAFETY: only this file's checks write their memory, and each name always holds a record of one value type.
+  return (memory[name] ??= {}) as Record<string, T>;
 }
 
 // Drops the memory of tabs whose pull request is no longer open.
@@ -197,14 +247,14 @@ export const commentsCheck: Check = {
   everyMinutes: 5,
   async run(context) {
     const triggers: Trigger[] = [];
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const seenByTab = (context.memory.seen ??= {}) as Record<string, string[]>;
+    const seenByTab = memoryRecord<string[]>(context.memory, "seen");
 
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const updatedByTab = (context.memory.updatedAt ??= {}) as Record<
-      string,
-      string
-    >;
+    const updatedByTab = memoryRecord<string>(context.memory, "updatedAt");
+
+    const awaitingByTab = memoryRecord<boolean>(
+      context.memory,
+      "awaitingReply",
+    );
 
     const openTabs = new Set<string>();
 
@@ -242,6 +292,7 @@ export const commentsCheck: Check = {
         );
 
         updatedByTab[key] = pull.updatedAt;
+        awaitingByTab[key] = awaitsReply(threads, username);
         seenByTab[key] = threads.flatMap((thread) =>
           thread.notes.map((note) => note.id),
         );
@@ -254,9 +305,14 @@ export const commentsCheck: Check = {
       }
     }
 
-    forgetClosedTabs(openTabs, seenByTab, updatedByTab);
+    forgetClosedTabs(openTabs, seenByTab, updatedByTab, awaitingByTab);
 
-    return triggers;
+    return {
+      triggers,
+      openConcerns: Object.entries(awaitingByTab).flatMap(([key, awaiting]) =>
+        awaiting ? [`comments:${key}`] : [],
+      ),
+    };
   },
 };
 
@@ -308,6 +364,7 @@ async function hygieneTrigger(
 
   return pullRequestTrigger(repository, pull, {
     key: `review:${tab.key}:${pull.headSha}`,
+    concern: `hygiene:${tab.key}`,
     playbook: "review",
     notify: `${tab.label}: ${errors} hygiene error(s), ${warnings} warning(s)`,
     prompt: `The hygiene linter flagged ${describe(pull)} at ${pull.headSha}: ${errors} error(s) and ${warnings} warning(s). The worktree is checked out at that commit.
@@ -324,11 +381,9 @@ export const hygieneCheck: Check = {
   async run(context) {
     const triggers: Trigger[] = [];
 
-    // SAFETY: only this check writes its memory, and only with this shape.
-    const lintedByTab = (context.memory.linted ??= {}) as Record<
-      string,
-      string
-    >;
+    const lintedByTab = memoryRecord<string>(context.memory, "linted");
+
+    const flaggedByTab = memoryRecord<boolean>(context.memory, "flagged");
 
     const openTabs = new Set<string>();
 
@@ -383,6 +438,7 @@ export const hygieneCheck: Check = {
           hygieneTrigger(context, repository, pull).then(
             (trigger) => {
               lintedByTab[tabKey(pull)] = pull.headSha;
+              flaggedByTab[tabKey(pull)] = trigger !== undefined;
 
               return trigger;
             },
@@ -397,8 +453,13 @@ export const hygieneCheck: Check = {
       triggers.push(...lintTriggers.filter((trigger) => trigger !== undefined));
     }
 
-    forgetClosedTabs(openTabs, lintedByTab);
+    forgetClosedTabs(openTabs, lintedByTab, flaggedByTab);
 
-    return triggers;
+    return {
+      triggers,
+      openConcerns: Object.entries(flaggedByTab).flatMap(([key, flagged]) =>
+        flagged ? [`hygiene:${key}`] : [],
+      ),
+    };
   },
 };

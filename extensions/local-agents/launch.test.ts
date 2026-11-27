@@ -52,6 +52,7 @@ const definition: LocalAgentDefinition = {
 
 const trigger: Trigger = {
   key: "review:1",
+  concern: "review:#1",
   playbook: "review",
   repository: repository.url,
   tab: {

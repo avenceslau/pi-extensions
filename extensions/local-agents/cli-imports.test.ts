@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 // packages and dev dependencies are missing there, even though they resolve in a development checkout.
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
 const RUNTIME_IMPORT =
   /^(?:import|export)(?!\s+type\b)[^'"]*?\bfrom\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/gm;
 
@@ -50,10 +51,12 @@ test("the local-agents CLI imports only Node builtins and the package's dependen
   const manifest: { dependencies: Record<string, string> } = JSON.parse(
     readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"),
   );
+
   const available = new Set([
     ...Object.keys(manifest.dependencies),
     ...builtinModules,
   ]);
+
   const missing = [
     ...runtimePackages(join(PACKAGE_ROOT, "extensions/local-agents/cli.ts")),
   ].filter((name) => !name.startsWith("node:") && !available.has(name));

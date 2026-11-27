@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -343,6 +344,12 @@ export default function (pi: ExtensionAPI) {
             params.description,
           ),
         );
+
+        const url = created.match(/https?:\/\/\S+/g)?.at(-1);
+
+        if (url) {
+          appendFileSync(policy.reviewsFile, `${url}\n`);
+        }
 
         return textResult(created);
       },

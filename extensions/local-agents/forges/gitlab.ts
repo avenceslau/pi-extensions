@@ -62,6 +62,7 @@ interface GitLabJob {
 
 interface GitLabPipeline {
   id: number;
+  ref: string;
   created_at: string;
   updated_at: string;
   web_url: string;
@@ -75,7 +76,21 @@ interface GitLabBridge {
 
 const MILLISECONDS_PER_SECOND = 1000;
 
+const MERGE_TRAIN_REF = /^refs\/merge-requests\/\d+\/train$/;
+const MERGE_TRAIN_PAGES = 5;
+const MERGE_TRAIN_PAGE_ITEMS = 100;
+
 const MERGE_REQUEST_REF = /^refs\/merge-requests\/(\d+)\/(?:head|merge|train)$/;
+
+function pipelineTiming(pipeline: GitLabPipeline): Pipeline {
+  return {
+    id: String(pipeline.id),
+    url: pipeline.web_url,
+    seconds:
+      (Date.parse(pipeline.updated_at) - Date.parse(pipeline.created_at)) /
+      MILLISECONDS_PER_SECOND,
+  };
+}
 
 export function gitlabClient(
   host: string,
@@ -234,13 +249,32 @@ export function gitlabClient(
         `${projectPath}/pipelines?ref=${encodeURIComponent(branch)}&status=success&source=push&per_page=${count}`,
       );
 
-      return pipelines.map((pipeline) => ({
-        id: String(pipeline.id),
-        url: pipeline.web_url,
-        seconds:
-          (Date.parse(pipeline.updated_at) - Date.parse(pipeline.created_at)) /
-          MILLISECONDS_PER_SECOND,
-      }));
+      return pipelines.map(pipelineTiming);
+    },
+
+    // Train pipelines are mixed with the other merge request pipelines, so this reads pages until it has enough.
+    async successfulMergeTrainPipelines(count): Promise<Pipeline[]> {
+      const trains: GitLabPipeline[] = [];
+
+      for (
+        let page = 1;
+        page <= MERGE_TRAIN_PAGES && trains.length < count;
+        page += 1
+      ) {
+        const batch = await json<GitLabPipeline[]>(
+          `${projectPath}/pipelines?status=success&source=merge_request_event&per_page=${MERGE_TRAIN_PAGE_ITEMS}&page=${page}`,
+        );
+
+        trains.push(
+          ...batch.filter((pipeline) => MERGE_TRAIN_REF.test(pipeline.ref)),
+        );
+
+        if (batch.length < MERGE_TRAIN_PAGE_ITEMS) {
+          break;
+        }
+      }
+
+      return trains.slice(0, count).map(pipelineTiming);
     },
 
     async pipelineJobs(pipeline): Promise<JobTiming[]> {

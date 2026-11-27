@@ -12,6 +12,18 @@ export interface TabRecord extends Tab {
     branch: string;
   }[];
   runIds: string[];
+  // Missing on tabs opened before concerns were tracked; those close only with their pull request.
+  concerns?: {
+    check: string;
+    id: string;
+    addressed: boolean;
+  }[];
+  // Merge requests the tab's runs opened, and whether each is still open.
+  openedReviews?: {
+    url: string;
+    open: boolean;
+  }[];
+  lastActivityAt?: string;
 }
 
 export interface AgentState {

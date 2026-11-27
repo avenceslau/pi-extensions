@@ -103,6 +103,7 @@ export async function prepareLaunch(
     worktree: worktree.path,
     gitDirectory: worktree.gitDirectory,
     statusFile: join(runsDirectory, `${runId}.status.json`),
+    reviewsFile: join(runsDirectory, `${runId}.reviews.json`),
     tools,
     bashCommandPatterns: playbook.commands(repository),
     repository: {

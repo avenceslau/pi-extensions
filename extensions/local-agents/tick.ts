@@ -31,6 +31,12 @@ import {
 } from "./rex.ts";
 import { isDue } from "./schedule.ts";
 import {
+  hasActiveRun,
+  isAddressed,
+  lastActivity,
+  updateConcerns,
+} from "./tabs.ts";
+import {
   agentDirectory,
   readState,
   writeState,
@@ -43,6 +49,11 @@ const DEFAULT_MAX_RUNNING_AGENTS = 3;
 const LAUNCH_ATTEMPTS = 3;
 const MILLISECONDS_PER_SECOND = 1000;
 const STATUS_SUFFIX = ".status.json";
+const REVIEWS_SUFFIX = ".reviews.json";
+const REVIEW_NUMBER = /\/(?:merge_requests|pull)\/(\d+)/;
+
+// An addressed tab stays open this long after its last activity, so it does not vanish while the user reads it.
+const ADDRESSED_TAB_IDLE_MS = 30 * 60 * 1000;
 
 export interface TickOptions {
   // Print the triggers instead of starting runs, and save nothing.
@@ -114,6 +125,22 @@ function liveRuns(runsDirectory: string): Map<string, RunStatusFile> {
   return runs;
 }
 
+// One URL per line; a missing file means the run opened nothing.
+function readOpenedReviews(path: string): string[] {
+  try {
+    return readFileSync(path, "utf8")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 function repositoriesFor(
   agentConfig: LocalAgentConfig,
   config: PiExtensionsConfig,
@@ -164,17 +191,24 @@ function enqueue(state: AgentState, triggers: Trigger[]): number {
   return added;
 }
 
+interface CheckOutcome {
+  triggers: Trigger[];
+  baseline: Trigger[];
+  // Open concerns by check, for the checks that ran and report them.
+  openConcerns: Map<string, Set<string>>;
+}
+
 async function runCheck(
   context: TickContext,
   check: Check,
-): Promise<{ triggers: Trigger[]; baseline: Trigger[] }> {
+): Promise<CheckOutcome> {
   const { state, now, log } = context;
   const memory = structuredClone(state.checks[check.name]?.memory ?? {});
   const firstRun = state.checks[check.name]?.lastRunAt === undefined;
   const started = Date.now();
 
   try {
-    const triggers = await check.run({
+    const checkResult = await check.run({
       agent: context.definition.name,
       repositories: [...context.repositoryByUrl.values()],
       config: context.config,
@@ -183,6 +217,17 @@ async function runCheck(
       memory,
       log: (message) => log(`${check.name}: ${message}`),
     });
+
+    const triggers = checkResult.triggers.map((trigger) => ({
+      ...trigger,
+      check: check.name,
+    }));
+
+    const openConcerns = new Map(
+      checkResult.openConcerns
+        ? [[check.name, new Set(checkResult.openConcerns)]]
+        : [],
+    );
 
     const seconds = Math.round(
       (Date.now() - started) / MILLISECONDS_PER_SECOND,
@@ -195,19 +240,23 @@ async function runCheck(
     log(`${check.name}: ${triggers.length} trigger(s) in ${seconds}s`);
 
     return firstRun && !check.actOnFirstRun
-      ? { triggers: [], baseline: triggers }
-      : { triggers, baseline: [] };
+      ? { triggers: [], baseline: triggers, openConcerns }
+      : { triggers, baseline: [], openConcerns };
   } catch (error) {
     log(`${check.name} failed: ${errorMessage(error)}`);
 
-    return { triggers: [], baseline: [] };
+    return {
+      triggers: [],
+      baseline: [],
+      openConcerns: new Map(),
+    };
   }
 }
 
 async function runDueChecks(
   context: TickContext,
   onlyChecks: string[],
-): Promise<{ triggers: Trigger[]; baseline: Trigger[] }> {
+): Promise<CheckOutcome> {
   const due = context.definition.checks.filter((check) =>
     onlyChecks.length > 0
       ? onlyChecks.includes(check.name)
@@ -221,6 +270,9 @@ async function runDueChecks(
   return {
     triggers: outcomes.flatMap((outcome) => outcome.triggers),
     baseline: outcomes.flatMap((outcome) => outcome.baseline),
+    openConcerns: new Map(
+      outcomes.flatMap((outcome) => [...outcome.openConcerns]),
+    ),
   };
 }
 
@@ -289,7 +341,7 @@ export async function tick(
       log,
     };
 
-    const { triggers, baseline } = await runDueChecks(
+    const { triggers, baseline, openConcerns } = await runDueChecks(
       context,
       options.onlyChecks,
     );
@@ -310,6 +362,8 @@ export async function tick(
       );
     }
 
+    updateConcerns(state, openConcerns);
+
     const added = enqueue(state, triggers);
 
     if (added > 0) {
@@ -323,18 +377,6 @@ export async function tick(
   } finally {
     release();
   }
-}
-
-// A session that finished its task stays open for the user but is idle, so it does not hold the tab's worktree.
-function hasActiveRun(
-  tab: TabRecord,
-  runs: Map<string, RunStatusFile>,
-): boolean {
-  return tab.runIds.some((runId) => {
-    const status = runs.get(runId)?.status;
-
-    return status !== undefined && status !== "idle";
-  });
 }
 
 // Prepares the worktree and starts the run in the trigger's tab, opening the tab when it is not open; returns the
@@ -395,6 +437,25 @@ async function startRun(
   }
 
   record.runIds.push(launch.runId);
+
+  const concern = record.concerns?.find(
+    (known) => known.id === trigger.concern,
+  );
+
+  if (concern) {
+    concern.addressed = false;
+  } else {
+    record.concerns = [
+      ...(record.concerns ?? []),
+      {
+        check: trigger.check ?? "",
+        id: trigger.concern,
+        addressed: false,
+      },
+    ];
+  }
+
+  record.lastActivityAt = context.now.toISOString();
 
   return record;
 }
@@ -490,8 +551,68 @@ async function pullRequestStillOpen(
   return open.some((pull) => pull.number === tab.pullRequest?.number);
 }
 
-// Removes tabs the user closed and tabs whose pull request is no longer open, with their clean worktrees. A tab with
-// an active run is kept; closing a tab ends its idle sessions, whose transcripts stay in pi's session files.
+// Merge requests the tab's runs opened, read from the files the guard writes, with whether each is still open.
+async function refreshOpenedReviews(
+  context: TickContext,
+  tab: TabRecord,
+): Promise<void> {
+  const known = new Map(
+    (tab.openedReviews ?? []).map((review) => [review.url, review]),
+  );
+
+  for (const runId of tab.runIds) {
+    for (const url of readOpenedReviews(
+      join(context.runsDirectory, `${runId}${REVIEWS_SUFFIX}`),
+    )) {
+      if (!known.has(url)) {
+        known.set(url, {
+          url,
+          open: true,
+        });
+      }
+    }
+  }
+
+  for (const review of known.values()) {
+    if (!review.open) {
+      continue;
+    }
+
+    const repository = [...context.repositoryByUrl.values()].find((candidate) =>
+      review.url.startsWith(`${candidate.forge.url}/`),
+    );
+
+    const number = Number(REVIEW_NUMBER.exec(review.url)?.[1]);
+
+    if (repository && Number.isInteger(number)) {
+      const open = await repository.forge.openPullRequests();
+
+      review.open = open.some((pull) => pull.number === number);
+    }
+  }
+
+  tab.openedReviews = [...known.values()];
+}
+
+async function shouldClose(
+  context: TickContext,
+  tab: TabRecord,
+  runs: Map<string, RunStatusFile>,
+): Promise<boolean> {
+  if (!(await pullRequestStillOpen(context, tab))) {
+    return true;
+  }
+
+  await refreshOpenedReviews(context, tab);
+
+  const idleFor = context.now.getTime() - lastActivity(tab, runs);
+
+  return isAddressed(tab) && idleFor >= ADDRESSED_TAB_IDLE_MS;
+}
+
+// Removes tabs the user closed, tabs whose pull request is no longer open, and tabs whose concerns are all addressed
+// and that have been idle for a while, with their clean worktrees. A tab with an active run is kept; closing a tab ends
+// its idle sessions, whose transcripts stay in pi's session files.
 async function removeFinishedTabs(context: TickContext): Promise<void> {
   const agent = context.definition.name;
   const windows = await windowIds(agent);
@@ -504,7 +625,7 @@ async function removeFinishedTabs(context: TickContext): Promise<void> {
       continue;
     }
 
-    if (windowOpen && (await pullRequestStillOpen(context, tab))) {
+    if (windowOpen && !(await shouldClose(context, tab, runs))) {
       continue;
     }
 
