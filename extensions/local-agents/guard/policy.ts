@@ -7,7 +7,6 @@ const RunPolicySchema = Type.Object({
   agent: Type.String(),
   runId: Type.String(),
   worktree: Type.String(),
-  // The clone's git directory, which git writes to for commits made in the worktree.
   gitDirectory: Type.String(),
   statusFile: Type.String(),
   tools: Type.Array(Type.String()),

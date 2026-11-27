@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { LocalAgentConfig } from "../shared/config-types.ts";
 import type {
   LocalAgentDefinition,
+  Playbook,
   Repository,
   Trigger,
 } from "./definition.ts";
@@ -28,6 +29,44 @@ const RULES = join(dirname(fileURLToPath(import.meta.url)), "rules.md");
 export interface Launch {
   runId: string;
   command: string[];
+}
+
+// What the agent should know about its worktree before it starts: leftover changes, whether dependencies are
+// installed, and which of the repository's commands it may run.
+function worktreeNotes(
+  playbook: Playbook,
+  repository: Repository,
+  worktree: PreparedWorktree,
+): string[] {
+  const notes: string[] = [];
+
+  if (worktree.keptUncommittedChanges) {
+    notes.push(
+      "The worktree has uncommitted changes from an earlier run, so it was not moved to the commit above. Check `git status` and ask the user before discarding anything.",
+    );
+  }
+
+  if (!playbook.runsRepositoryCode) {
+    return notes;
+  }
+
+  const setup = `\`${repository.setup.join(" ")}\``;
+
+  if (worktree.setupFailure) {
+    notes.push(
+      `Installing dependencies with ${setup} failed, so tests may not run until that is fixed:\n\n\`\`\`\n${worktree.setupFailure}\n\`\`\``,
+    );
+  } else if (repository.setup.length > 0) {
+    notes.push(`Dependencies are installed (${setup} ran in the worktree).`);
+  }
+
+  if (repository.commands.length > 0) {
+    notes.push(
+      `Besides read-only and git commands, you may run these repository commands to build and test (\`*\` is one word, \`**\` the rest):\n${repository.commands.map((pattern) => `- \`${pattern}\``).join("\n")}`,
+    );
+  }
+
+  return notes;
 }
 
 export async function prepareLaunch(
@@ -80,12 +119,13 @@ export async function prepareLaunch(
     comment: playbook.comment,
   };
 
-  const dirtyNote = worktree.keptUncommittedChanges
-    ? "\n\nThe worktree has uncommitted changes from an earlier run, so it was not moved to the commit above. Check `git status` and ask the user before discarding anything.\n"
-    : "";
-
   mkdirSync(runsDirectory, { recursive: true });
-  writeFileSync(promptPath, `${trigger.prompt}${dirtyNote}`);
+  writeFileSync(
+    promptPath,
+    [trigger.prompt, ...worktreeNotes(playbook, repository, worktree)].join(
+      "\n\n",
+    ),
+  );
   writeFileSync(policyPath, JSON.stringify(policy, null, 2));
 
   const extensions = [

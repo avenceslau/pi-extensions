@@ -8,6 +8,8 @@ export interface Repository {
   forge: ForgeClient;
   // Extra command patterns from the config for playbooks that run the repository's checks.
   commands: string[];
+  // The command that installs dependencies in a worktree; empty when there is none.
+  setup: string[];
 }
 
 export interface CheckContext {
@@ -69,6 +71,8 @@ export interface Playbook {
   mergeRequest?: boolean;
   // May comment on the trigger's review, after the user confirms.
   comment?: boolean;
+  // Runs the repository's code, so the worktree gets the repository's setup first and the prompt lists its commands.
+  runsRepositoryCode?: boolean;
 }
 
 export interface Check {
