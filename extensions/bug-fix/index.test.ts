@@ -7,7 +7,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import bugFix from "./index.ts";
 
 type Tool = {
-  execute: (...args: unknown[]) => Promise<{ details: unknown }>;
+  execute: (
+    ...args: unknown[]
+  ) => Promise<{ details: { branch: string; windowId: string } }>;
 };
 
 const directory = mkdtempSync(join(tmpdir(), "bug-fix-"));
@@ -15,7 +17,7 @@ const callLog = join(directory, "calls.jsonl");
 const sessionsFile = join(directory, "sessions.json");
 
 // Each fake records its argv and prints what the extension expects from the real program.
-const FAKE_PROGRAMS: Record<string, string> = {
+const FAKE_PROGRAMS = {
   git: `
 case "$1 $2" in
   "rev-parse --show-toplevel") echo "${directory}" ;;
@@ -43,6 +45,7 @@ for (const [name, body] of Object.entries(FAKE_PROGRAMS)) {
 process.env.PATH = `${directory}:${process.env.PATH}`;
 
 function calls(program: string): string[][] {
+  // SAFETY: every line is the JSON array of strings a fake program wrote.
   return readFileSync(callLog, "utf8")
     .trim()
     .split("\n")
@@ -56,6 +59,8 @@ function setup(existingSessions: { session_id: string; label: string }[]) {
   writeFileSync(sessionsFile, JSON.stringify({ sessions: existingSessions }));
 
   let tool: Tool | undefined;
+
+  // SAFETY: start_bug_fix uses only these members of the extension API.
   const pi = {
     registerTool: (definition: Tool) => {
       tool = definition;
@@ -63,6 +68,7 @@ function setup(existingSessions: { session_id: string; label: string }[]) {
     getThinkingLevel: () => "high",
     events: { emit: () => undefined },
   } as unknown as ExtensionAPI;
+
   bugFix(pi);
 
   if (!tool) {
@@ -70,6 +76,7 @@ function setup(existingSessions: { session_id: string; label: string }[]) {
   }
 
   const registeredTool = tool;
+
   const context = {
     cwd: directory,
     model: { provider: "provider", id: "model" },
@@ -89,7 +96,7 @@ test("creates the bugs session and a worktree for the first bug", async () => {
     description: "parse() in src/parse.ts loses the final line.",
   });
 
-  const { branch, ...window } = started.details as { branch: string };
+  const { branch, ...window } = started.details;
   assert.match(branch, /^bug\/parser-drops-trailing-newline-[0-9a-f]{6}$/);
   assert.deepEqual(window, {
     sessionId: "session:new",
@@ -148,10 +155,7 @@ test("adds a tab to the existing bugs session", async () => {
     description: "Details.",
   });
 
-  assert.equal(
-    (started.details as { windowId: string }).windowId,
-    "window:added",
-  );
+  assert.equal(started.details.windowId, "window:added");
   assert.deepEqual(calls("rex")[1].slice(0, 6), [
     "window",
     "new",

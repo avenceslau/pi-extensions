@@ -14,6 +14,7 @@ import { prepareWorktree, removeWorktree } from "../shared/worktree.ts";
 const REX_SESSION_LABEL = "bugs";
 const WINDOW_LABEL_MAX_CHARACTERS = 40;
 const BRANCH_SLUG_MAX_CHARACTERS = 40;
+
 // Two bugs with the same title still get separate branches, so a reused worktree is never reset over earlier work.
 const BRANCH_SUFFIX_CHARACTERS = 6;
 
@@ -56,6 +57,7 @@ function bugBranch(title: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .slice(0, BRANCH_SLUG_MAX_CHARACTERS)
     .replace(/^-+|-+$/g, "");
+
   const suffix = randomUUID().slice(0, BRANCH_SUFFIX_CHARACTERS);
 
   return slug ? `bug/${slug}-${suffix}` : `bug/${suffix}`;
@@ -93,6 +95,7 @@ async function resolveCwd(
   }
 
   const cwd = resolve(context.cwd, requested.replace(/^@/, ""));
+
   const cwdStats = await stat(cwd).catch((error: Error) => {
     throw new Error(
       `Cannot use ${cwd} as the bug's repository: ${error.message}`,
@@ -150,6 +153,7 @@ export default function (pi: ExtensionAPI) {
         ["rev-parse", "--show-toplevel"],
         { cwd },
       );
+
       const worktree = await prepareWorktree(repositoryPath, {
         branch,
         fetch: [],
@@ -159,6 +163,7 @@ export default function (pi: ExtensionAPI) {
       const model =
         loadConfig(pi).models?.extensions?.["bug-fix"] ??
         (context.model && `${context.model.provider}/${context.model.id}`);
+
       const command = [
         "pi",
         "--name",
@@ -181,16 +186,24 @@ export default function (pi: ExtensionAPI) {
           command,
         ),
       );
+
       // The caller gets the failure from `opened`; the queue only needs to stay usable.
       rexQueue = opened.catch(() => undefined);
-      const window = await opened.catch(async (error: unknown) => {
+
+      let window: BugFixWindow;
+
+      try {
+        window = await opened;
+      } catch (error) {
         await removeWorktree(repositoryPath, worktree.path, branch);
+
         throw error;
-      });
+      }
 
       const where = window.createdSession
         ? `a new Rex session "${REX_SESSION_LABEL}"`
         : `the Rex session "${REX_SESSION_LABEL}"`;
+
       context.ui.notify(`Started bug fix "${title}" in ${where}`, "info");
 
       return {
